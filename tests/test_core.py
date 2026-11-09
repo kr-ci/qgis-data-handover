@@ -513,3 +513,34 @@ def test_too_many_changes_is_a_clear_error(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setattr(xlsx, "MAX_ROWS", 3)
     with pytest.raises(PackageError, match="Porównanie znalazło"):
         export(str(tmp_path / "v2.xlsx"), parcels(rows=rows), LOOK, previous=first)
+
+
+# --- R5: eksport w tle — postęp i anulowanie ----------------------------------
+
+
+def test_export_reports_progress(tmp_path: Path) -> None:
+    rows = [[f"{i}/1", *parcels().rows[0][1:]] for i in range(500)]
+    seen: list[float] = []
+    export(str(tmp_path / "p.xlsx"), parcels(rows=rows), LOOK, progress=seen.append)
+    assert seen and seen == sorted(seen) and 0 <= seen[0] and seen[-1] == 100
+
+
+@pytest.mark.parametrize("when", ["rows", "save"])
+def test_canceled_export_keeps_previous_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, when: str) -> None:
+    """Anulowanie nie zostawia uszkodzonego ani częściowego pliku — poprzednia wersja zostaje."""
+    from data_handover.core import xlsx
+
+    target = tmp_path / "plik.xlsx"
+    target.write_bytes(b"poprzednia wersja")
+    state = {"cancel": when == "rows"}
+    real_save = xlsx.Workbook.save
+
+    def save_then_cancel(wb: object, path: str) -> None:
+        real_save(wb, path)
+        state["cancel"] = True  # użytkownik anuluje, gdy plik tymczasowy jest już zapisany
+
+    monkeypatch.setattr(xlsx.Workbook, "save", save_then_cancel)
+    with pytest.raises(xlsx.CanceledError):
+        export(str(target), parcels(), LOOK, canceled=lambda: state["cancel"])
+    assert target.read_bytes() == b"poprzednia wersja"
+    assert [p.name for p in tmp_path.iterdir()] == ["plik.xlsx"]

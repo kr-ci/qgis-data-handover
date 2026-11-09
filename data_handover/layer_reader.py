@@ -18,13 +18,14 @@ from qgis.core import (
     QgsProject,
     QgsRectangle,
     QgsVectorLayer,
+    QgsVectorLayerFeatureSource,
 )
 from qgis.PyQt.QtCore import QDate, QDateTime, QTime
 
 from .core import privacy
 from .core.i18n import tr
 from .core.model import MAX_ROWS, Column, Package, Value
-from .core.xlsx import PackageError
+from .core.xlsx import CanceledError, PackageError
 
 # Kody typów są wspólne dla QVariant.Type (Qt5) i QMetaType.Type (Qt6).
 _KIND_BY_TYPE = {1: "boolean", 2: "integer", 3: "integer", 4: "integer", 5: "integer", 6: "decimal",
@@ -118,19 +119,39 @@ def save_choices(layer: QgsVectorLayer, choices: list[FieldChoice], key: Optiona
     layer.setCustomProperty(PROPERTY, json.dumps(data, ensure_ascii=False))
 
 
-def representer(layer: QgsVectorLayer, index: int) -> Optional[Callable[[Any], Value]]:
-    """Funkcja zamieniająca kod na etykietę (jak w formularzu) albo None."""
+def fields_only(layer: QgsVectorLayer) -> QgsVectorLayer:
+    """Prywatna warstwa w pamięci z tymi samymi polami, bez obiektów.
+
+    Formatter etykiet sięga do warstwy tylko po jej pola. W tle dostaje tę
+    kopię zamiast oryginału, bo oryginał użytkownik może w trakcie eksportu
+    usunąć z projektu — wywołanie na usuniętej warstwie wysypałoby QGIS.
+    """
+    copy = QgsVectorLayer("None", "fields", "memory")
+    copy.dataProvider().addAttributes(layer.fields().toList())
+    copy.updateFields()
+    # Typ pola, którego warstwa w pamięci nie zna, przesunąłby numery pól.
+    return copy if copy.fields().names() == layer.fields().names() else layer
+
+
+def representer(layer: QgsVectorLayer, index: int,
+                target: Optional[QgsVectorLayer] = None) -> Optional[Callable[[Any], Value]]:
+    """Funkcja zamieniająca kod na etykietę (jak w formularzu) albo None.
+
+    Pamięć podręczna etykiet powstaje tu, z `layer`; `target` (zob. `fields_only`)
+    dostaje formatter przy każdym wywołaniu — domyślnie ta sama warstwa.
+    """
     setup = layer.editorWidgetSetup(index)
     if setup.type() not in _REPRESENTED_WIDGETS:
         return None
     config = setup.config()
     formatter = QgsApplication.fieldFormatterRegistry().fieldFormatter(setup.type())
     cache = formatter.createCache(layer, index, config)
+    target = layer if target is None else target
 
     def represent(raw: Any) -> Value:
         if to_python(raw) is None:
             return None
-        return to_python(formatter.representValue(layer, index, config, cache, raw))
+        return to_python(formatter.representValue(target, index, config, cache, raw))
 
     return represent
 
@@ -190,7 +211,57 @@ def _request(layer: QgsVectorLayer, scope: str, extent: Optional[QgsRectangle],
     return request
 
 
-def build_package(
+@dataclass
+class PackagePlan:
+    """Wszystko, co trzeba ustalić w wątku okna, zanim odczyt pójdzie w tle.
+
+    Warstwy QGIS nie wolno czytać z innego wątku — `source` to jej kopia do
+    odczytu (`QgsVectorLayerFeatureSource`), razem z filtrem i edycjami.
+    Pamięć podręczna etykiet (value map, relacje) powstaje tu, w wątku okna;
+    w tle wywołujemy już tylko `representValue` na kopii pól (`fields_only`).
+    """
+
+    source: QgsVectorLayerFeatureSource
+    request: QgsFeatureRequest
+    indices: list[int]
+    converters: list[Optional[Callable[[Any], Value]]]
+    columns: list[Column]
+    facts: list[tuple[str, str]]
+    notes: list[str]
+    title: str
+    language: str
+    key: Optional[str]
+    expected: int  # przewidywana liczba obiektów — do paska postępu
+
+    def read(self, progress: Optional[Callable[[float], None]] = None,
+             canceled: Optional[Callable[[], bool]] = None) -> Package:
+        """Odczyt obiektów (może działać w tle). `progress` dostaje 0–100."""
+        rows: list[list[Value]] = []
+        step = max(1, self.expected // 100)
+        for feature in self.source.getFeatures(self.request):
+            row: list[Value] = []
+            for index, convert in zip(self.indices, self.converters):
+                raw = feature.attribute(index)
+                row.append(convert(raw) if convert is not None else to_python(raw))
+            rows.append(row)
+            if len(rows) > MAX_ROWS:
+                raise PackageError(tr(self.language, "error.too_many_rows", n=len(rows), limit=MAX_ROWS))
+            if len(rows) % step == 0:
+                if canceled is not None and canceled():
+                    raise CanceledError
+                if progress is not None:
+                    progress(min(100.0, 100.0 * len(rows) / max(1, self.expected)))
+        facts = [(k, str(len(rows)) if k == "count" else v) for k, v in self.facts]
+        return Package(title=self.title, columns=self.columns, rows=rows, facts=facts,
+                       notes=self.notes, language=self.language, key=self.key)
+
+
+def build_package(layer: QgsVectorLayer, choices: list[FieldChoice], **kwargs: Any) -> Package:
+    """Składa paczkę z warstwy w bieżącym wątku (argumenty jak w `plan_package`)."""
+    return plan_package(layer, choices, **kwargs).read()
+
+
+def plan_package(
     layer: QgsVectorLayer,
     choices: list[FieldChoice],
     *,
@@ -203,14 +274,15 @@ def build_package(
     language: str = "pl",
     key: Optional[str] = None,
     personal: Optional[dict[str, str]] = None,
-) -> Package:
-    """Składa paczkę z warstwy. `personal` — wynik `personal_data()` (jeśli już policzony)."""
+) -> PackagePlan:
+    """Plan paczki z warstwy (w wątku okna). `personal` — wynik `personal_data()`, jeśli już policzony."""
     fields = layer.fields()
     personal = personal_data(layer) if personal is None else personal
     columns: list[Column] = []
     indices: list[int] = []
     converters: list[Optional[Callable[[Any], Value]]] = []
     notes: list[str] = []
+    stand_in = fields_only(layer)
 
     for choice in choices:
         index = fields.indexOf(choice.name)
@@ -232,7 +304,7 @@ def build_package(
             column.is_identifier = False
         columns.append(column)
         indices.append(index)
-        converters.append(representer(layer, index))
+        converters.append(representer(layer, index, stand_in))
 
     if key is not None and key not in [c.name for c in columns]:
         key = None
@@ -242,16 +314,6 @@ def build_package(
         raise PackageError(tr(language, "error.too_many_rows", n=layer.selectedFeatureCount(), limit=MAX_ROWS))
     if scope == "all" and layer.featureCount() > MAX_ROWS:
         raise PackageError(tr(language, "error.too_many_rows", n=layer.featureCount(), limit=MAX_ROWS))
-
-    rows: list[list[Value]] = []
-    for feature in layer.getFeatures(request):
-        row: list[Value] = []
-        for index, convert in zip(indices, converters):
-            raw = feature.attribute(index)
-            row.append(convert(raw) if convert is not None else to_python(raw))
-        rows.append(row)
-        if len(rows) > MAX_ROWS:
-            raise PackageError(tr(language, "error.too_many_rows", n=len(rows), limit=MAX_ROWS))
 
     # Filtr warstwy wpisany do „Metryki” mógłby zdradzić wartość pola osobowego,
     # którego nie eksportujemy jawnie (np. "email" = 'anna@example.com').
@@ -270,10 +332,11 @@ def build_package(
         ("crs", f"{crs.authid()} — {crs.description()}" if crs.isValid() else ""),
         ("scope", tr(language, f"scope.{scope}")),
         ("filter", subset),
-        ("count", str(len(rows))),
+        ("count", ""),  # uzupełnia PackagePlan.read()
         ("total", str(layer.featureCount())),
         ("author", author),
         ("qgis", f"QGIS {Qgis.version()} · Data Handover"),
     ]
-    return Package(title=title or layer.name(), columns=columns, rows=rows, facts=facts,
-                   notes=notes, language=language, key=key)
+    expected = layer.selectedFeatureCount() if scope == "selected" else layer.featureCount()
+    return PackagePlan(QgsVectorLayerFeatureSource(layer), request, indices, converters, columns, facts,
+                       notes, title or layer.name(), language, key, expected)

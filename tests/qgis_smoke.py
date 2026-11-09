@@ -11,6 +11,7 @@ import datetime as dt
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +28,7 @@ from qgis.core import (  # noqa: E402
     QgsSettings,
     QgsVectorLayer,
 )
-from qgis.PyQt.QtCore import QDate  # noqa: E402
+from qgis.PyQt.QtCore import QDate, QTimer  # noqa: E402
 from qgis.PyQt.QtWidgets import QApplication  # noqa: E402
 from qgis.testing import start_app  # noqa: E402
 
@@ -40,6 +41,8 @@ from data_handover.core.i18n import tr  # noqa: E402
 from data_handover.core.model import HEADER_ROW, THEMES, Look, Sheets, look_with_theme  # noqa: E402
 from data_handover.core.xlsx import export  # noqa: E402
 from data_handover.dialog import HandoverDialog  # noqa: E402
+from data_handover.export_task import ExportTask  # noqa: E402
+from data_handover.export_task import start as start_task  # noqa: E402
 from data_handover.layer_reader import FieldChoice  # noqa: E402
 from data_handover.plugin import UI_LANGUAGE, ui_language  # noqa: E402
 
@@ -75,6 +78,68 @@ def make_layer() -> QgsVectorLayer:
     layer.updateExtents()
     QgsProject.instance().addMapLayer(layer)
     return layer
+
+
+def wait(task: ExportTask, seconds: float = 120) -> None:
+    """Czeka na koniec zadania, obsługując w tym czasie zdarzenia jak okno QGIS."""
+    deadline = time.monotonic() + seconds
+    while not task.done:
+        if time.monotonic() > deadline:
+            raise AssertionError("zadanie w tle nie skończyło się na czas")
+        QApplication.processEvents()
+        time.sleep(0.005)
+
+
+def background(small: QgsVectorLayer) -> None:
+    """R5: eksport w tle nie zamraża pętli zdarzeń, a anulowanie nie zostawia pliku."""
+    uri = "Point?crs=EPSG:2180&field=fid:integer&field=nr_dz:string&field=pow_m2:double&field=przezn:string"
+    layer = QgsVectorLayer(uri, "duza", "memory")
+    layer.setEditorWidgetSetup(3, small.editorWidgetSetup(small.fields().indexOf("przezn")))  # value map
+    features = []
+    for i in range(30_000):
+        f = QgsFeature(layer.fields())
+        f.setAttributes([i, f"{i}/1", 1000.0 + i, "U"])
+        features.append(f)
+    assert layer.dataProvider().addFeatures(features)[0]
+    choices = [FieldChoice(n) for n in layer.fields().names()]
+
+    ticks: list[float] = []
+    timer = QTimer()
+    timer.timeout.connect(lambda: ticks.append(time.monotonic()))
+    timer.start(10)
+    path = str(OUT / "w_tle.xlsx")
+    task = ExportTask("test", layer_reader.plan_package(layer, choices, personal={}), path)
+    progress: list[float] = []
+    task.progressChanged.connect(progress.append)
+    start_task(task)
+    wait(task)
+    timer.stop()
+    check(task.result is not None and task.result.rows == 30_000 and os.path.isfile(path),
+          f"zadanie w tle zapisuje plik ({task.error})")
+    check(len(ticks) >= 5 and len(progress) >= 10, f"pętla zdarzeń działa w trakcie eksportu "
+          f"({len(ticks)} tyknięć zegara, {len(progress)} sygnałów postępu)")
+    check(load_workbook(path, read_only=True).worksheets[0].max_row > 30_000,
+          "plik z zadania w tle ma wszystkie wiersze")
+
+    # Anulowanie w trakcie: poprzednia wersja pliku zostaje, plików tymczasowych brak.
+    before = Path(path).read_bytes()
+    task = ExportTask("test", layer_reader.plan_package(layer, choices, personal={}), path)
+    task.progressChanged.connect(lambda value: task.cancel() if value > 5 else None)
+    start_task(task)
+    wait(task)
+    check(task.result is None and task.error is None and Path(path).read_bytes() == before
+          and sorted(p.name for p in OUT.glob(".~*")) == [], "anulowanie zostawia poprzedni plik bez zmian")
+
+    # Warstwa usunięta z projektu w trakcie eksportu: zadanie czyta własną kopię źródła.
+    QgsProject.instance().addMapLayer(layer)
+    task = ExportTask("test", layer_reader.plan_package(layer, choices, personal={}), str(OUT / "usunieta.xlsx"))
+    start_task(task)
+    QgsProject.instance().removeMapLayer(layer.id())
+    wait(task)
+    check(task.result is not None and task.result.rows == 30_000, "usunięcie warstwy w trakcie nie psuje eksportu")
+    sheet = load_workbook(str(OUT / "usunieta.xlsx"), read_only=True).worksheets[0]
+    check(list(sheet.iter_rows(min_row=HEADER_ROW + 1, max_row=HEADER_ROW + 1, values_only=True))[0][3] == "usługi",
+          "etykieta value map z zadania w tle")
 
 
 def check(condition: bool, message: str) -> None:
@@ -209,17 +274,23 @@ def main() -> None:
     target = {"path": str(OUT / "brak_katalogu" / "plik.xlsx")}
     dialog_module.QFileDialog.getSaveFileName = lambda *args, **kwargs: (target["path"], "")
     box.export()
+    wait(box.task)
     check(bool(warnings) and layer.customProperty(dialog_module.PREVIOUS, "") == "",
           "nieudany zapis nie zmienia podstawy porównania")
     target["path"] = str(OUT / "v3.xlsx")
     box = HandoverDialog(iface, None, layer=layer)
     box.export()
+    check(not box.isVisible() and box.task is not None and iface.messageBar().pushWidget.call_args[0][1]
+          == Qgis.MessageLevel.Info, "eksport z okna idzie w tle, z paskiem postępu w komunikatach")
+    wait(box.task)
     check(layer.customProperty(dialog_module.PREVIOUS, "") == target["path"],
           "udany zapis staje się podstawą porównania")
     bar = iface.messageBar()
     text = bar.createMessage.call_args[0][1]
     level = bar.pushWidget.call_args[0][1]
     check("•" in text and level == Qgis.MessageLevel.Warning, "uwagi z eksportu widoczne w komunikacie")
+
+    background(layer)
 
     # Plik do obejrzenia (zrzut arkuszy robi scripts/render-xlsx.sh).
     export(str(ROOT / "build" / f"przyklad_qgis{VERSION}.xlsx"), pkg2, Look(),

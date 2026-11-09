@@ -1,0 +1,2 @@
+tryb=sync obiekty=200000 odczyt=2.4s razem=49.4s najdluzsze_zamrozenie=49.43s plik=6.1MB
+tryb=sync obiekty=200000 odczyt=2.5s razem=50.9s najdluzsze_zamrozenie=50.85s plik=6.1MB

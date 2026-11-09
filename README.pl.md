@@ -29,6 +29,10 @@ kontrolną, e-mail, telefon, numer księgi wieczystej) są domyślnie
 odznaczone; można je zamaskować albo świadomie wyeksportować. Wykrywanie to
 podpowiedź, nie gwarancja anonimizacji.
 
+Eksport działa w tle: z QGIS można dalej korzystać, a pasek komunikatów
+pokazuje postęp z przyciskiem **Anuluj**. Anulowanie zostawia plik
+docelowy bez zmian.
+
 Przycisk **Przywróć domyślne** na dole okna zeruje wygląd, arkusze i język
 pliku (opisy kolumn zapisane w projekcie zostają). Okno i plik są dostępne
 po angielsku, niemiecku, francusku, hiszpańsku, portugalsku, polsku,

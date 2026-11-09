@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import html
 import json
 import os
 import re
-import traceback
 from typing import Any, Optional
 
-from qgis.core import Qgis, QgsMessageLog, QgsSettings, QgsVectorLayer
+from qgis.core import Qgis, QgsMessageLog, QgsProject, QgsSettings, QgsVectorLayer
 from qgis.gui import QgsColorButton, QgsFieldComboBox, QgsFileWidget, QgsMapLayerComboBox
 from qgis.PyQt.QtCore import Qt, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QButtonGroup,
     QCheckBox,
     QColorDialog,
@@ -35,6 +34,7 @@ from qgis.PyQt.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -47,7 +47,7 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-from . import layer_reader
+from . import export_task, layer_reader
 from .core import privacy, xlsx
 from .core.i18n import LANGUAGE_NAMES, LANGUAGES, count_label, tr
 from .core.model import (
@@ -218,6 +218,9 @@ class HandoverDialog(QDialog):
         self.custom_color = str(self.settings.value(SETTINGS + "custom_color", "#2F6F8F"))
         self._filling = False
         self.relaunch = False  # True: wtyczka otworzy okno ponownie w nowym języku
+        self.task: Optional[export_task.ExportTask] = None
+        self.progress_item: Any = None
+        self.layer_id = ""
 
         self.setWindowTitle(self.t("ui.title"))
         self.setMinimumSize(980, 700)
@@ -951,31 +954,66 @@ class HandoverDialog(QDialog):
         look, sheets = self.look(), self.sheets()
         self._remember(path)
         canvas = self.iface.mapCanvas() if self.iface is not None else None
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            pkg = layer_reader.build_package(
+            plan = layer_reader.plan_package(
                 self.layer, choices, scope=self.scope(),
                 extent=canvas.extent() if canvas is not None else None,
                 extent_crs=canvas.mapSettings().destinationCrs() if canvas is not None else None,
                 title=title, author=self.author_edit.text().strip(), note=self.note_edit.toPlainText().strip(),
                 language=lang, key=key, personal=self.personal,
             )
-            result = xlsx.export(path, pkg, look, sheets, previous=previous)
         except xlsx.PackageError as exc:
-            QApplication.restoreOverrideCursor()
             self._warn(str(exc))
             return
-        except Exception as exc:  # zapis pliku: brak uprawnień, plik otwarty w Excelu itp.
-            QApplication.restoreOverrideCursor()
-            QgsMessageLog.logMessage(traceback.format_exc(), "Data Handover", Qgis.MessageLevel.Critical)
-            self._warn(self.t("ui.error.write", error=exc))
-            return
-        QApplication.restoreOverrideCursor()
-        # Dopiero udany zapis staje się podstawą następnego porównania.
-        self.layer.setCustomProperty(PREVIOUS, result.path)
-        self.last_result = result
-        self._report(result)
+        # Odczyt i zapis idą w tle: okno się zamyka, QGIS zostaje do dyspozycji.
+        task = export_task.ExportTask(self.t("ui.exporting", path=os.path.basename(path)), plan, path,
+                                      look, sheets, previous)
+        task.on_finished = self._finished
+        self.task, self.layer_id = task, self.layer.id()
+        self.progress_item = self._progress(task)
+        export_task.start(task)
         self.accept()
+
+    def _progress(self, task: export_task.ExportTask) -> Any:
+        """Pasek postępu z przyciskiem „Anuluj” w pasku komunikatów QGIS."""
+        if self.iface is None:
+            return None
+        bar = self.iface.messageBar()
+        item = bar.createMessage("Data Handover", task.description())
+        progress = QProgressBar()
+        progress.setRange(0, 100)
+
+        def show(value: float) -> None:
+            with contextlib.suppress(RuntimeError):  # użytkownik zamknął komunikat
+                progress.setValue(int(value))
+
+        task.progressChanged.connect(show)
+        cancel = QPushButton(self.t("ui.cancel"))
+        cancel.clicked.connect(task.cancel)
+        item.layout().addWidget(progress)
+        item.layout().addWidget(cancel)
+        bar.pushWidget(item, Qgis.MessageLevel.Info, 0)
+        return item
+
+    def _finished(self, task: export_task.ExportTask) -> None:
+        """Koniec zadania (wątek okna): komunikat i podstawa następnego porównania."""
+        if self.progress_item is not None:
+            with contextlib.suppress(RuntimeError):
+                self.iface.messageBar().popWidget(self.progress_item)
+        if task.result is not None:
+            # Dopiero udany zapis staje się podstawą następnego porównania.
+            layer = QgsProject.instance().mapLayer(self.layer_id)
+            if layer is not None:
+                layer.setCustomProperty(PREVIOUS, task.result.path)
+            self.last_result = task.result
+            self._report(task.result)
+        elif isinstance(task.error, xlsx.PackageError):
+            self._warn(str(task.error))
+        elif task.error is not None:
+            QgsMessageLog.logMessage(task.trace, "Data Handover", Qgis.MessageLevel.Critical)
+            self._warn(self.t("ui.error.write", error=task.error))
+        elif self.iface is not None:
+            self.iface.messageBar().pushMessage("Data Handover", self.t("ui.canceled"), Qgis.MessageLevel.Info, 5)
 
     def _save_state(self) -> None:
         """Ustawienia okna: pola warstwy w projekcie, wygląd i arkusze w ustawieniach użytkownika."""

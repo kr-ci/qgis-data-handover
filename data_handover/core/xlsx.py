@@ -11,9 +11,10 @@ import contextlib
 import datetime as dt
 import math
 import os
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Optional, Union, cast
+from typing import Any, Callable, Optional, Union, cast
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE, Cell, MergedCell
@@ -48,6 +49,19 @@ class NotHandoverFileError(ValueError):
 
 class EditedFileError(NotHandoverFileError):
     """Paczka zmieniona ręcznie po eksporcie: wiersze lub kolumny nie zgadzają się z zapisem."""
+
+
+class CanceledError(Exception):
+    """Użytkownik anulował eksport; plik docelowy został nietknięty."""
+
+
+Progress = Optional[Callable[[float], None]]  # dostaje 0–100
+CancelCheck = Optional[Callable[[], bool]]
+
+
+def _check(canceled: CancelCheck) -> None:
+    if canceled is not None and canceled():
+        raise CanceledError
 
 
 class PackageError(ValueError):
@@ -255,8 +269,14 @@ def export(
     look: Optional[Look] = None,
     sheets: Optional[Sheets] = None,
     previous: Optional[str] = None,
+    progress: Progress = None,
+    canceled: CancelCheck = None,
 ) -> ExportResult:
-    """Zapisuje plik; z `previous` dodaje arkusz zmian względem tamtego pliku."""
+    """Zapisuje plik; z `previous` dodaje arkusz zmian względem tamtego pliku.
+
+    `canceled` sprawdzamy co setną część wierszy i tuż przed podmianą pliku:
+    po anulowaniu leci `CanceledError`, a plik docelowy zostaje taki, jaki był.
+    """
     look = look or Look()
     sheets = sheets or Sheets()
     lang = pkg.language
@@ -284,7 +304,8 @@ def export(
     wb = Workbook()
     ws = wb.active
     assert ws is not None
-    _write_data(ws, pkg, rows, look, sheets, changes)
+    _check(canceled)
+    _write_data(ws, pkg, rows, look, sheets, changes, progress, canceled)
     if sheets.dictionary:
         _write_dictionary(wb.create_sheet(), pkg, look, sheets.dictionary_items)
     if sheets.about:
@@ -294,16 +315,21 @@ def export(
     _write_meta(wb.create_sheet(META_SHEET), pkg, len(rows), look.header_row)
     wb.properties.title = _clean(pkg.title)
     wb.properties.creator = "Data Handover (QGIS)"
-    _save(wb, path)
+    _save(wb, path, canceled)
+    if progress is not None:
+        progress(100.0)
     return ExportResult(path, len(rows), changes or [], notes)
 
 
-def _save(wb: Workbook, path: str) -> None:
-    """Zapis przez plik tymczasowy obok docelowego: błąd w trakcie nie niszczy poprzedniej wersji."""
+def _save(wb: Workbook, path: str, canceled: CancelCheck = None) -> None:
+    """Zapis przez plik tymczasowy obok docelowego: błąd albo anulowanie nie niszczy poprzedniej wersji."""
     folder, base = os.path.split(os.path.abspath(path))
-    tmp = os.path.join(folder, f".~{base}.{os.getpid()}.tmp")
+    # Unikalna nazwa: dwa eksporty w tle do tego samego pliku nie mogą dzielić pliku tymczasowego.
+    # (mkstemp odpada: nadaje prawa 0600, a plik bywa dzielony z innymi).
+    tmp = os.path.join(folder, f".~{base}.{uuid.uuid4().hex[:12]}.tmp")
     try:
         wb.save(tmp)
+        _check(canceled)  # zapis openpyxl trwa długo i nie da się go przerwać w środku
         os.replace(tmp, path)
     except BaseException:
         with contextlib.suppress(OSError):
@@ -476,7 +502,7 @@ def _sheet_basics(ws: Worksheet, look: Look, freeze_row: Optional[int]) -> None:
 
 def _write_data(
     ws: Worksheet, pkg: Package, rows: list[list[Value]], look: Look, sheets: Sheets,
-    changes: Optional[list[diff.Change]],
+    changes: Optional[list[diff.Change]], progress: Progress = None, canceled: CancelCheck = None,
 ) -> None:
     lang = pkg.language
     hr = look.header_row
@@ -498,7 +524,12 @@ def _write_data(
     fill = _solid(style.fill) if style.fill else None
     formats = [number_format(c, lang) for c in pkg.columns]
     aligns = [_alignment(style, c.is_identifier) for c in pkg.columns]
+    step = max(1, len(rows) // 100)
     for r, row in enumerate(rows, start=1):
+        if r % step == 0:
+            _check(canceled)
+            if progress is not None:
+                progress(90.0 * r / len(rows))  # ostatnie 10% to zapis pliku
         for c, value in enumerate(row):
             cell = ws.cell(row=hr + r, column=c + 1)
             _set_text(cell, value)

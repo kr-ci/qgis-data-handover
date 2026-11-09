@@ -1,0 +1,2 @@
+tryb=task obiekty=200000 odczyt=2.8s razem=59.2s najdluzsze_zamrozenie=0.20s plik=6.1MB
+tryb=task obiekty=200000 odczyt=3.0s razem=60.0s najdluzsze_zamrozenie=0.19s plik=6.1MB

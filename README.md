@@ -29,6 +29,10 @@ PESEL with a valid checksum, e-mail, phone number, land register number)
 are unchecked by default; you can mask them or export them on purpose.
 Detection is a hint, not a guarantee of anonymisation.
 
+Export runs in the background: QGIS stays usable, and the message bar
+shows progress with a **Cancel** button. Cancelling leaves the target
+file as it was.
+
 The **Restore defaults** button at the bottom of the window resets the
 look, the sheets and the file language (column descriptions saved in the
 project stay). The window and the file are available in English, German,
