@@ -66,6 +66,10 @@ qgis_process run dataHandover:package --PROJECT_PATH=project.qgz -- \
     INPUT=parcels OUTPUT=/data/parcels.xlsx
 ```
 
+Two exports writing the same file at the same time are not blocked: the
+one that finishes last wins (the file is never left half-written), so give
+each run its own output path.
+
 `qgis_process` reads the settings of the QGIS user profile, so run it as
 the same system user who set up the window. Without that profile the
 default look applies; columns still come from the project.

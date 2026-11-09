@@ -65,6 +65,10 @@ qgis_process run dataHandover:package --PROJECT_PATH=projekt.qgz -- \
     INPUT=dzialki OUTPUT=/dane/dzialki.xlsx
 ```
 
+Dwa eksporty zapisujące jednocześnie ten sam plik nie są blokowane:
+zostaje wynik tego, który skończy później (plik nigdy nie zostaje
+zapisany do połowy), więc każdemu uruchomieniu daj własną ścieżkę.
+
 `qgis_process` czyta ustawienia profilu użytkownika QGIS, więc uruchamiaj
 go jako ten sam użytkownik systemu, który ustawiał okno. Bez tego profilu
 obowiązuje domyślny wygląd; kolumny i tak pochodzą z projektu.
