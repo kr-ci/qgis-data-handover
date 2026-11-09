@@ -358,3 +358,158 @@ def test_large_export_is_fast_enough(tmp_path: Path) -> None:
     elapsed = time.perf_counter() - start
     print(f"\n50 000 wierszy: {elapsed:.1f} s")
     assert elapsed < 60
+
+
+# --- Przegląd R4: każda naprawiona wada ma swój test ---------------------------
+
+
+def _all_text(path: str) -> str:
+    """Cała treść pliku widoczna dla odbiorcy: komórki i komentarze ze wszystkich arkuszy."""
+    wb = load_workbook(path)
+    parts = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                parts += [str(cell.value or ""), cell.comment.text if cell.comment else ""]
+    return "\n".join(parts)
+
+
+def test_masking_hides_plain_values_from_previous_export(tmp_path: Path) -> None:
+    """Zarzut 1: poprzedni eksport był jawny, nowy maskuje — stare nazwisko nie wraca."""
+    first = str(tmp_path / "v1.xlsx")
+    plain = parcels()
+    plain.columns[5].masked = False
+    export(first, plain, LOOK)
+    second = str(tmp_path / "v2.xlsx")
+    result = export(second, parcels(), LOOK, sheets=ALL, previous=first)
+    assert not [c for c in result.changes if c.column == "wlasc"]
+    assert "Jan Kowalski" not in _all_text(second)
+
+
+def test_masked_key_cannot_be_compared(tmp_path: Path) -> None:
+    first = str(tmp_path / "v1.xlsx")
+    export(first, parcels(), LOOK)
+    pkg = parcels()
+    pkg.columns[0].masked = True
+    with pytest.raises(PackageError, match="bez maskowania"):
+        export(str(tmp_path / "v2.xlsx"), pkg, LOOK, previous=first)
+
+
+def test_masked_column_hides_value_map_labels(tmp_path: Path) -> None:
+    """Zarzut 2: etykiety value map kolumny maskowanej nie trafiają do dymka ani słownika."""
+    path = str(tmp_path / "a.xlsx")
+    pkg = parcels()
+    pkg.columns[5].codes = [("1", "Jan Kowalski")]
+    export(path, pkg, LOOK, sheets=ALL)
+    assert "Jan Kowalski" not in _all_text(path)
+
+
+def test_filter_mentioning_personal_field() -> None:
+    """Zarzut 3: filtr odwołujący się do chronionego pola jest rozpoznawany."""
+    assert privacy.mentions("\"email\" = 'anna@example.com'", ["email"])
+    assert privacy.mentions("EMAIL LIKE '%x%'", ["email"])
+    assert not privacy.mentions("\"email_ok\" = 1", ["email"])
+    assert not privacy.mentions("", ["email"])
+
+
+def test_long_integers_stay_exact(tmp_path: Path) -> None:
+    """Zarzut 4: liczba całkowita ponad 15 cyfr trafia jako tekst, klucze się nie zlewają."""
+    assert diff.key_text(9007199254740992) != diff.key_text(9007199254740993)
+    assert diff.normalize(5) == diff.normalize(5.0)
+    columns = [Column("id", "ID", "integer", is_identifier=True), Column("v", "V", "integer")]
+    rows: list[list[object]] = [[9007199254740993, 1], [9007199254740992, 2], [12, 3]]
+    pkg = Package("t", columns, rows, key="id", language="pl")  # type: ignore[arg-type]
+    first = str(tmp_path / "v1.xlsx")
+    export(first, pkg, LOOK)
+    ws = load_workbook(first)["Dane"]
+    assert ws.cell(row=HEADER_ROW + 1, column=1).value == "9007199254740993"
+    assert ws.cell(row=HEADER_ROW + 3, column=1).value == 12
+    result = export(str(tmp_path / "v2.xlsx"), pkg, LOOK, previous=first)
+    assert result.changes == []
+
+
+def test_edited_previous_file_is_rejected(tmp_path: Path) -> None:
+    """Zarzut 5: dopisany wiersz albo przestawione kolumny — błąd zamiast cichego raportu."""
+    first = str(tmp_path / "v1.xlsx")
+    export(first, parcels(), LOOK)
+    appended = str(tmp_path / "dopisany.xlsx")
+    wb = load_workbook(first)
+    wb["Dane"].cell(row=HEADER_ROW + 3, column=1).value = "99/9"
+    wb.save(appended)
+    swapped = str(tmp_path / "przestawiony.xlsx")
+    wb = load_workbook(first)
+    ws = wb["Dane"]
+    a, b = ws.cell(row=HEADER_ROW, column=1), ws.cell(row=HEADER_ROW, column=2)
+    a.value, b.value = b.value, a.value
+    wb.save(swapped)
+    for edited in (appended, swapped):
+        with pytest.raises(PackageError, match="zmieniono po eksporcie"):
+            export(str(tmp_path / "v2.xlsx"), parcels(), LOOK, previous=edited)
+
+
+def test_key_left_out_of_export_is_an_error(tmp_path: Path) -> None:
+    """Zarzut 6: porównanie bez klucza nie może udawać „brak różnic”."""
+    first = str(tmp_path / "v1.xlsx")
+    export(first, parcels(), LOOK)
+    with pytest.raises(PackageError, match="kolumny-klucza"):
+        export(str(tmp_path / "v2.xlsx"), parcels(key=None), LOOK, previous=first)
+
+
+def test_generated_headers_are_unique(tmp_path: Path) -> None:
+    """Zarzut 7."""
+    columns = [Column("a", "X"), Column("b", "X"), Column("c", "X (2)"), Column("d", "x")]
+    path = str(tmp_path / "a.xlsx")
+    export(path, Package("t", columns, [["1", "2", "3", "4"]], language="pl"), LOOK)
+    headers = [str(c.value).lower() for c in load_workbook(path)["Dane"][HEADER_ROW]]
+    assert len(set(headers)) == 4
+
+
+def test_title_starting_with_equals_stays_text(tmp_path: Path) -> None:
+    """Zarzut 8."""
+    path = str(tmp_path / "a.xlsx")
+    export(path, parcels(title="=1+1"), LOOK)
+    cell = load_workbook(path)["Dane"]["A1"]
+    assert cell.value == "=1+1" and cell.data_type == "s"
+
+
+def test_illegal_characters_outside_data_are_cleaned(tmp_path: Path) -> None:
+    """Zarzut 10: znak sterujący w nagłówku, opisie, tytule i metryce nie przerywa eksportu."""
+    path = str(tmp_path / "a.xlsx")
+    pkg = parcels(title="Dział\x01ki", facts=[("note", "uwaga\x02")])
+    pkg.columns[0].header = "Nr\x01 działki"
+    pkg.columns[2].description = "opis\x03"
+    result = export(path, pkg, LOOK, sheets=ALL)
+    text = _all_text(path)
+    assert "Nr działki" in text and "Działki" in text and "\x01" not in text
+    assert any("4 nagłówkach" in n for n in result.notes)
+
+
+def test_failed_save_keeps_previous_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zarzut 11: błąd w trakcie zapisu nie niszczy poprzedniego pliku i nie zostawia śmieci."""
+    from openpyxl import Workbook
+
+    path = tmp_path / "a.xlsx"
+    export(str(path), parcels(), LOOK)
+    before = path.read_bytes()
+
+    def broken_save(self: object, filename: str) -> None:
+        Path(filename).write_bytes(b"polowa")
+        raise OSError("brak miejsca na dysku")
+
+    monkeypatch.setattr(Workbook, "save", broken_save)
+    with pytest.raises(OSError):
+        export(str(path), parcels(), LOOK)
+    assert path.read_bytes() == before
+    assert [p.name for p in tmp_path.iterdir()] == ["a.xlsx"]
+
+
+def test_too_many_changes_is_a_clear_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zarzut 13: więcej zmian niż wierszy arkusza — czytelny błąd przed zapisem."""
+    from data_handover.core import xlsx
+
+    first = str(tmp_path / "v1.xlsx")
+    export(first, parcels(), LOOK)
+    rows = [[r[0], "x", 1.0, "x", None, None, False] for r in parcels().rows]
+    monkeypatch.setattr(xlsx, "MAX_ROWS", 3)
+    with pytest.raises(PackageError, match="Porównanie znalazło"):
+        export(str(tmp_path / "v2.xlsx"), parcels(rows=rows), LOOK, previous=first)

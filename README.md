@@ -1,68 +1,64 @@
-# Data Handover — wtyczka QGIS
+# Data Handover — QGIS plugin
 
-> **EN:** A QGIS plugin (3.40+ and 4.x) that exports the attribute table
-> to a formatted Excel workbook. You choose whether the data becomes an
-> Excel table or a plain range and control fonts, colours, fills, borders,
-> banded rows and layout, with a live preview. Optional sheets: data
-> dictionary, data origin and changes since the previous export. Columns
-> that look like personal data are left out or masked by default.
+**English** · [Polski](README.pl.md)
 
-Wtyczka QGIS, która eksportuje tabelę atrybutów warstwy wektorowej do
-sformatowanego pliku Excela — z wyglądem ustawionym przez Ciebie, czytelnymi
-nagłówkami i etykietami zamiast kodów.
+A QGIS plugin that exports the attribute table of a vector layer to a
+formatted Excel workbook — styled the way you choose, with readable
+headers and labels instead of codes.
 
-## Co ustawiasz
+## What you set
 
-| Zakładka | Co zawiera |
+| Tab | What it holds |
 |---|---|
-| **Dane** | warstwa, zakres (wszystkie / zaznaczone / w zasięgu mapy), kolumny i ich kolejność, nagłówek, jednostka i opis kolumny (zapamiętywane w projekcie), decyzja o danych osobowych |
-| **Wygląd** | tabela Excela albo zwykły zakres (z filtrami lub bez); osobno dla nagłówków i zawartości: czcionka, rozmiar, kolor, pogrubienie, kursywa, podkreślenie, tło, wyrównanie, zawijanie; pasy co drugi wiersz; obramowanie (linia, kolor, wszystkie linie / tylko poziome / tylko obrys); tytuł nad danymi, zamrożony nagłówek, siatka, opis w dymku nagłówka, szerokość kolumn, orientacja wydruku, kolor karty; gotowe kolorystyki i podgląd na żywo |
-| **Arkusze** | tytuł, język pliku (10 języków, domyślnie angielski), arkusze dodatkowe — domyślnie wyłączone — z wyborem zawartości |
-| **Zmiany** | porównanie z poprzednim eksportem według kolumny-klucza |
+| **Data** | layer, scope (all / selected / in map extent), columns and their order, header, unit and description of each column (saved in the project), the decision about personal data |
+| **Look** | Excel table or plain range (with or without filters); separately for headers and content: font, size, colour, bold, italic, underline, fill, alignment, wrapping; banded rows; borders (line, colour, all lines / horizontal only / outline only); title above the data, frozen header, gridlines, description in a header comment, column width, print orientation, tab colour; colour presets and a live preview |
+| **Sheets** | title, file language (10 languages, English by default), extra sheets — off by default — with a choice of what goes in |
+| **Changes** | comparison with the previous export by a key column |
 
-## Co jest w pliku
+## What is in the file
 
-| Arkusz | Co zawiera |
+| Sheet | What it holds |
 |---|---|
-| **Dane** | dane sformatowane według ustawień; nagłówki z aliasów; etykiety zamiast kodów (value map, relacje); liczby z jednostką, które dalej są liczbami; identyfikatory (TERYT, nr działki) jako tekst; gotowe do wydruku |
-| **Słownik** (opcja) | wybrane pozycje dla każdej kolumny: pole źródłowe, typ, jednostka, opis, kody i etykiety |
-| **Metryka** (opcja) | wybrane pozycje: stan danych na dzień, warstwa, źródło, układ współrzędnych, zakres, filtr, liczba obiektów, autor, instrukcja czytania, uwagi do wydania |
-| **Zmiany** (opcja) | obiekty dodane, usunięte i zmienione względem poprzedniego pliku, z wartościami „było / jest”; zmienione komórki podświetlone w danych |
+| **Data** | the data formatted according to your settings; headers from aliases; labels instead of codes (value map, relations); numbers with a unit that are still numbers; identifiers (e.g. TERYT, parcel numbers) kept as text; ready to print |
+| **Dictionary** (optional) | chosen items for each column: source field, type, unit, description, codes and labels |
+| **About** (optional) | chosen items: data as of date, layer, source, coordinate reference system, scope, filter, feature count, author, reading guide, release notes |
+| **Changes** (optional) | features added, removed and changed since the previous file, with "was / is" values; changed cells highlighted in the data |
 
-Pola wyglądające na dane osobowe (nazwa pola albo wartości: PESEL z sumą
-kontrolną, e-mail, telefon, numer księgi wieczystej) są domyślnie
-odznaczone; można je zamaskować albo świadomie wyeksportować. Wykrywanie to
-podpowiedź, nie gwarancja anonimizacji.
+Fields that look like personal data (by field name or by values: Polish
+PESEL with a valid checksum, e-mail, phone number, land register number)
+are unchecked by default; you can mask them or export them on purpose.
+Detection is a hint, not a guarantee of anonymisation.
 
-Przycisk **Przywróć domyślne** na dole okna zeruje wygląd, arkusze i język
-pliku (opisy kolumn zapisane w projekcie zostają). Okno i plik są dostępne
-po angielsku, niemiecku, francusku, hiszpańsku, portugalsku, polsku,
-rosyjsku, koreańsku, japońsku i chińsku. Język okna wybierasz na liście
-„Język wtyczki” w stopce (domyślnie angielski), język treści pliku —
-osobno w zakładce Arkusze. Nagłówki i wartości kolumn pochodzą z warstwy,
-więc zostają w języku danych.
+The **Restore defaults** button at the bottom of the window resets the
+look, the sheets and the file language (column descriptions saved in the
+project stay). The window and the file are available in English, German,
+French, Spanish, Portuguese, Polish, Russian, Korean, Japanese and
+Simplified Chinese. Pick the window language from the "Plugin language"
+list in the footer (English by default); the file language is a separate
+choice on the Sheets tab. Column headers and values come from the layer,
+so they stay in the language of the data.
 
-## Wymagania i instalacja
+## Requirements and installation
 
-- QGIS 3.40–3.44 albo 4.x (sprawdzone: 3.40.15, 3.44.15, 4.2.3).
-- Biblioteka Pythona **openpyxl** — jest w instalatorze QGIS dla Windows;
-  w OSGeo4W dodaj pakiet `python3-openpyxl`, na Linuksie zainstaluj
-  `python3-openpyxl`. Bez niej wtyczka pokaże instrukcję instalacji.
+- QGIS 3.40–3.44 or 4.x (tested: 3.40, 3.44.15, 4.2.3).
+- The **openpyxl** Python library — included in the QGIS standalone
+  installer for Windows; in OSGeo4W add the `python3-openpyxl` package, on
+  Linux install `python3-openpyxl`. Without it the plugin shows
+  installation instructions.
 
-Instalacja z pliku: `scripts/package.sh` tworzy
-`build/data_handover-<wersja>.zip`; w QGIS: *Wtyczki → Zarządzaj wtyczkami →
-Zainstaluj z pliku ZIP*. Wtyczka pojawia się na pasku narzędzi, w menu
-*Wtyczki* i w menu kontekstowym warstwy wektorowej.
+Install from a file: `scripts/package.sh` builds
+`build/data_handover-<version>.zip`; in QGIS: *Plugins → Manage and Install
+Plugins → Install from ZIP*. The plugin appears on the toolbar, in the
+*Plugins* menu and in the context menu of a vector layer.
 
-## Rozwój
+## Development
 
 ```bash
 uvx ruff check .
 uv run --no-project --python 3.12 --with mypy --with openpyxl --with types-openpyxl mypy data_handover/core
 uv run --no-project --python 3.12 --with pytest --with openpyxl pytest -q
-scripts/qgis-test.sh 4.2.3          # test w prawdziwym QGIS (Docker); także 3.40, 3.44.15
-scripts/render-xlsx.sh build/przyklad_qgis4.2.3.xlsx   # zrzuty arkuszy (LibreOffice)
+scripts/qgis-test.sh 4.2.3          # test in real QGIS (Docker); CI also runs 3.40 and 3.44.15
+scripts/render-xlsx.sh build/przyklad_qgis4.2.3.xlsx   # sheet screenshots (LibreOffice)
 ```
 
-Licencja:
-GPL-2.0-or-later ([`LICENSE`](LICENSE)).
+License: GPL-2.0-or-later ([`LICENSE`](LICENSE)).

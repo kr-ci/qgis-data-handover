@@ -193,6 +193,34 @@ def main() -> None:
     check(len(dialog.choices()) == len(layer.fields()), "okno pokazuje wszystkie pola")
     dialog.close()
 
+    # Przegląd R4, zarzut 3: filtr odwołujący się do pominiętego pola osobowego nie trafia do metryki.
+    layer.setSubsetString("\"nazwisko\" = 'Jan Kowalski'")
+    hidden = layer_reader.build_package(layer, choices, personal=personal, language="pl")
+    check(dict(hidden.facts)["filter"] == tr("pl", "filter.hidden"), "filtr z danymi osobowymi ukryty w metryce")
+    layer.setSubsetString("")
+
+    # Zarzuty 9 i 12: podstawa porównania zmienia się tylko po udanym zapisie, a uwagi widać w komunikacie.
+    import data_handover.dialog as dialog_module
+
+    layer.setCustomProperty(dialog_module.PREVIOUS, "")
+    box = HandoverDialog(iface, None, layer=layer)
+    warnings: list[str] = []
+    box._warn = warnings.append  # type: ignore[method-assign]
+    target = {"path": str(OUT / "brak_katalogu" / "plik.xlsx")}
+    dialog_module.QFileDialog.getSaveFileName = lambda *args, **kwargs: (target["path"], "")
+    box.export()
+    check(bool(warnings) and layer.customProperty(dialog_module.PREVIOUS, "") == "",
+          "nieudany zapis nie zmienia podstawy porównania")
+    target["path"] = str(OUT / "v3.xlsx")
+    box = HandoverDialog(iface, None, layer=layer)
+    box.export()
+    check(layer.customProperty(dialog_module.PREVIOUS, "") == target["path"],
+          "udany zapis staje się podstawą porównania")
+    bar = iface.messageBar()
+    text = bar.createMessage.call_args[0][1]
+    level = bar.pushWidget.call_args[0][1]
+    check("•" in text and level == Qgis.MessageLevel.Warning, "uwagi z eksportu widoczne w komunikacie")
+
     # Plik do obejrzenia (zrzut arkuszy robi scripts/render-xlsx.sh).
     export(str(ROOT / "build" / f"przyklad_qgis{VERSION}.xlsx"), pkg2, Look(),
            Sheets(dictionary=True, about=True), previous=v1)

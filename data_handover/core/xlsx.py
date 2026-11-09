@@ -7,6 +7,7 @@ liczy zmiany i zapisuje arkusze, żeby plik nie przeczył sam sobie.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import math
 import os
@@ -31,6 +32,8 @@ from .model import DICTIONARY_ITEMS, HEADER_ROW, MAX_ROWS, CellLook, Column, Loo
 FORMAT_VERSION = "1"
 META_SHEET = "_handover"
 CELL_LIMIT = 32_767
+# Excel trzyma liczby jako double: pewnych jest 15 cyfr znaczących.
+EXACT_INT_LIMIT = 10**15
 WIDTH_SAMPLE = 300
 
 FILL_ADDED = "E2EFDA"
@@ -41,6 +44,10 @@ GREY_TEXT = "595959"
 
 class NotHandoverFileError(ValueError):
     """Plik nie jest paczką Data Handover (lub jest uszkodzony)."""
+
+
+class EditedFileError(NotHandoverFileError):
+    """Paczka zmieniona ręcznie po eksporcie: wiersze lub kolumny nie zgadzają się z zapisem."""
 
 
 class PackageError(ValueError):
@@ -85,6 +92,8 @@ def prepare_rows(pkg: Package) -> tuple[list[list[Value]], list[str]]:
                 value = tr(pkg.language, "bool.true" if value else "bool.false")
             elif isinstance(value, float) and not math.isfinite(value):
                 value = None
+            elif isinstance(value, int) and abs(value) >= EXACT_INT_LIMIT:
+                value = str(value)  # Excel zgubiłby ostatnie cyfry identyfikatora
             elif isinstance(value, (dt.datetime, dt.time)) and value.tzinfo is not None:
                 value = value.replace(tzinfo=None)
             if isinstance(value, str):
@@ -175,13 +184,22 @@ def read_snapshot(path: str) -> Snapshot:
             raise NotHandoverFileError(name)
         header_row = int(meta["header_row"])
         count = int(meta["rows"])
-        rows: list[list[Value]] = []
-        if count and columns:
-            ws = wb[meta["data_sheet"]]
-            for values in ws.iter_rows(
-                min_row=header_row + 1, max_row=header_row + count, max_col=len(columns), values_only=True
-            ):
-                rows.append(cast(list[Value], list(values)))
+        width = len(columns)
+        found = [
+            list(values) + [None] * (width + 1 - len(values))
+            for values in wb[meta["data_sheet"]].iter_rows(
+                min_row=header_row, max_row=header_row + count + 1, max_col=width + 1, values_only=True
+            )
+        ]
+        found += [[None] * (width + 1)] * (count + 2 - len(found))
+        # Ręczne zmiany po eksporcie (przestawione lub dopisane kolumny, dopisane
+        # lub usunięte wiersze) dałyby cicho błędny raport — odrzucamy taki plik.
+        edited = found[0] != [headers[c] for c in columns] + [None]
+        edited |= any(all(v is None for v in row[:width]) for row in found[1 : count + 1])
+        edited |= bool(count) and any(v is not None for v in found[count + 1])
+        if edited:
+            raise EditedFileError(name)
+        rows = [cast(list[Value], row[:width]) for row in found[1 : count + 1]]
         return Snapshot(name, meta.get("key") or None, meta.get("exported_at", ""), columns, headers, rows)
     except (KeyError, ValueError, TypeError) as exc:
         if isinstance(exc, NotHandoverFileError):
@@ -196,14 +214,22 @@ def changes_against(
 ) -> tuple[list[diff.Change], list[str]]:
     key = pkg.key
     lang = pkg.language
-    if key is None:
-        return [], []
+    masked = {c.name for c in pkg.columns if c.masked}
+    if key is None or key in masked:
+        # Bez jawnego klucza porównanie się nie odbywa — nie wolno udawać „brak różnic”.
+        raise PackageError(tr(lang, "error.key_unusable"))
     if key not in snapshot.columns:
         raise PackageError(tr(lang, "error.key_missing", key=key))
     names = [c.name for c in pkg.columns]
     common = [n for n in names if n in snapshot.columns and n != key]
+    # Kolumna maskowana teraz mogła być jawna poprzednio: maskujemy też stare
+    # wartości, inaczej pełne dane wróciłyby w „Było” i w dymkach komórek.
+    old_rows = [
+        [privacy.mask(v) if col in masked else v for col, v in zip(snapshot.columns, row)]
+        for row in snapshot.rows
+    ]
     try:
-        old = diff.index_rows(snapshot.columns, snapshot.rows, key)
+        old = diff.index_rows(snapshot.columns, old_rows, key)
         new = diff.index_rows(names, rows, key)
     except diff.DuplicateKeyError as exc:
         header = next((c.header for c in pkg.columns if c.name == key), key)
@@ -242,10 +268,17 @@ def export(
     if previous:
         try:
             snapshot = read_snapshot(previous)
+        except EditedFileError as exc:
+            raise PackageError(tr(lang, "error.previous_edited", file=str(exc))) from exc
         except NotHandoverFileError as exc:
             raise PackageError(tr(lang, "error.not_handover", file=str(exc))) from exc
         changes, change_notes = changes_against(snapshot, pkg, rows)
+        if len(changes) > MAX_ROWS:
+            raise PackageError(tr(lang, "error.too_many_changes", n=len(changes), limit=MAX_ROWS))
         notes += change_notes
+    dirty = sum(1 for text in _texts(pkg) if text and _clean(text) != text)
+    if dirty:
+        notes.append(tr(lang, "note.illegal.meta", n=dirty))
     notes = pkg.notes + notes
 
     wb = Workbook()
@@ -259,27 +292,61 @@ def export(
     if changes is not None and snapshot is not None:
         _write_changes(wb.create_sheet(), pkg, look, changes, snapshot)
     _write_meta(wb.create_sheet(META_SHEET), pkg, len(rows), look.header_row)
-    wb.properties.title = pkg.title
+    wb.properties.title = _clean(pkg.title)
     wb.properties.creator = "Data Handover (QGIS)"
-    wb.save(path)
+    _save(wb, path)
     return ExportResult(path, len(rows), changes or [], notes)
 
 
+def _save(wb: Workbook, path: str) -> None:
+    """Zapis przez plik tymczasowy obok docelowego: błąd w trakcie nie niszczy poprzedniej wersji."""
+    folder, base = os.path.split(os.path.abspath(path))
+    tmp = os.path.join(folder, f".~{base}.{os.getpid()}.tmp")
+    try:
+        wb.save(tmp)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
+        raise
+
+
+def _clean(text: str) -> str:
+    """Tekst, który Excel przyjmie: bez znaków sterujących i w limicie długości komórki."""
+    text = ILLEGAL_CHARACTERS_RE.sub("", text)
+    return text if len(text) <= CELL_LIMIT else text[: CELL_LIMIT - 1] + "…"
+
+
+def _texts(pkg: Package) -> list[str]:
+    """Teksty spoza wierszy danych, które trafiają do pliku (do zliczenia poprawek)."""
+    texts = [pkg.title, *pkg.notes, *(value for _, value in pkg.facts)]
+    for col in pkg.columns:
+        texts += [col.name, col.header, col.unit, col.description, *(t for pair in col.codes for t in pair)]
+    return texts
+
+
 def _set_text(cell: Union[Cell, MergedCell], value: Value) -> None:
-    """Wpisuje wartość; tekst zaczynający się od „=” zostaje tekstem, nie formułą."""
-    cell.value = value
+    """Wpisuje wartość; tekst zaczynający się od „=” zostaje tekstem, nie formułą.
+
+    Każdy tekst przechodzi przez `_clean()`, więc znak sterujący w aliasie,
+    opisie albo metryce nie przerywa zapisu.
+    """
+    cell.value = _clean(value) if isinstance(value, str) else value
     if cell.data_type == "f":
         cell.data_type = "s"
 
 
 def _unique_headers(columns: Sequence[Column]) -> list[str]:
-    seen: dict[str, int] = {}
+    used: set[str] = set()
     out = []
     for col in columns:
-        base = (col.header or col.name).strip() or col.name
-        n = seen.get(base.lower(), 0) + 1
-        seen[base.lower()] = n
-        out.append(base if n == 1 else f"{base} ({n})")
+        base = _clean((col.header or col.name).strip() or col.name)
+        name, n = base, 1
+        while name.lower() in used:  # także nazwy już nadane z numerem
+            n += 1
+            name = f"{base} ({n})"
+        used.add(name.lower())
+        out.append(name)
     return out
 
 
@@ -340,7 +407,7 @@ class _Borders:
 
 
 def _title(ws: Worksheet, title: str, subtitle: str, look: Look) -> None:
-    ws["A1"] = title
+    _set_text(ws["A1"], title)
     ws["A1"].font = Font(name=look.body.font, size=look.title_size, bold=True, color=look.title_color)
     ws["A1"].alignment = Alignment(vertical="center")
     ws.row_dimensions[1].height = max(30, look.title_size * 1.9)
@@ -394,7 +461,7 @@ def _page_setup(ws: Worksheet, title: str, lang: str, header_row: Optional[int],
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     footer = ws.oddFooter
     assert footer is not None  # openpyxl tworzy stopkę z arkuszem
-    footer.left.text = title.replace("&", "&&")
+    footer.left.text = _clean(title).replace("&", "&&")
     footer.right.text = tr(lang, "footer.page")
 
 
@@ -447,7 +514,7 @@ def _write_data(
         for i, col in enumerate(pkg.columns, start=1):
             tip = _header_tip(col)
             if tip:
-                comment = Comment(tip, "Data Handover")
+                comment = Comment(_clean(tip), "Data Handover")
                 comment.width, comment.height = 320, 140
                 ws.cell(row=hr, column=i).comment = comment
 
@@ -466,7 +533,7 @@ def _write_data(
 
 def _header_tip(col: Column) -> str:
     parts = [p for p in (col.description, f"[{col.unit}]" if col.unit else "") if p]
-    if col.codes:
+    if col.codes and not col.masked:  # etykiety kolumny maskowanej to też dane osobowe
         parts.append("; ".join(f"{code} = {label}" for code, label in col.codes[:12]))
     return "\n".join(parts)
 
@@ -499,7 +566,7 @@ def _highlight(
             cell = ws.cell(row=r, column=names.index(change.column) + 1)
             modified.append(cell.coordinate)
             old = display(change.old, col_by_name[change.column], pkg.language) or "—"
-            cell.comment = Comment(tr(pkg.language, "change.comment", old=old), "Data Handover")
+            cell.comment = Comment(_clean(tr(pkg.language, "change.comment", old=old)), "Data Handover")
     # ponytail: adresy stałe — po sortowaniu w Excelu podświetlenie zostaje w miejscu; arkusz „Zmiany” jest wzorcem
     for ranges, color in ((modified, FILL_MODIFIED), (added, FILL_ADDED)):
         if ranges:
@@ -553,7 +620,7 @@ def _write_dictionary(ws: Worksheet, pkg: Package, look: Look, items: Sequence[s
             "kind": tr(lang, f"kind.{col.kind}"),
             "unit": col.unit,
             "description": "\n".join(remarks),
-            "codes": "\n".join(f"{code} = {label}" for code, label in col.codes),
+            "codes": "" if col.masked else "\n".join(f"{code} = {label}" for code, label in col.codes),
         }
         for c, key in enumerate(keys):
             cell = ws.cell(row=HEADER_ROW + r, column=c + 1)
@@ -704,7 +771,7 @@ def _write_meta(ws: Worksheet, pkg: Package, count: int, header_row: int) -> Non
         ("exported_at", pkg.exported_at.isoformat()),
         ("language", pkg.language),
     ]
-    rows += [("column", c.name, c.header, c.kind) for c in pkg.columns]
+    rows += [("column", c.name, h, c.kind) for c, h in zip(pkg.columns, _unique_headers(pkg.columns))]
     for r, values in enumerate(rows, start=1):
         for c, value in enumerate(values, start=1):
             _set_text(ws.cell(row=r, column=c), value)

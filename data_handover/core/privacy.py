@@ -82,6 +82,12 @@ def detect(fields: Sequence[tuple[str, str]], samples: dict[str, list[Value]]) -
     return findings
 
 
+def mentions(text: str, names: Iterable[str]) -> bool:
+    """Czy tekst (np. filtr warstwy) odwołuje się do któregoś z pól — całym słowem, bez wielkości liter."""
+    lowered = text.lower()
+    return any(re.search(rf"(?<!\w){re.escape(n.lower())}(?!\w)", lowered) for n in names if n)
+
+
 def mask(value: Value) -> str | None:
     """„Jan Kowalski” → „J*** K***”, cyfry i symbole → „***”.
 

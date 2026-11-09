@@ -192,5 +192,10 @@
  "error.too_many_rows": "O âmbito tem {n} feições, mas uma folha do Excel comporta no máximo {limit}. Reduza o âmbito (seleção, extensão do mapa, filtro da camada).",
  "error.not_handover": "O ficheiro “{file}” não foi criado pelo Data Handover, por isso não pode ser comparado.",
  "error.key_missing": "O ficheiro anterior não tem a coluna-chave “{key}”.",
- "error.key_duplicate": "A coluna-chave “{key}” tem valores repetidos ou vazios ({n} linhas) — não identifica as feições de forma única. Escolha outra chave."
+ "error.key_duplicate": "A coluna-chave “{key}” tem valores repetidos ou vazios ({n} linhas) — não identifica as feições de forma única. Escolha outra chave.",
+ "error.key_unusable": "A comparação precisa da coluna-chave no ficheiro, sem máscara. Marque a coluna-chave no separador Dados (sem máscara) ou escolha outra chave.",
+ "error.previous_edited": "O ficheiro “{file}” foi editado depois da exportação (as linhas ou colunas não correspondem ao que foi guardado). Escolha a exportação original para comparar.",
+ "error.too_many_changes": "A comparação encontrou {n} alterações, mas uma folha do Excel comporta no máximo {limit}. Compare um âmbito mais restrito.",
+ "note.illegal.meta": "Foram removidos caracteres de controlo não permitidos, ou cortado texto com mais de 32 767 caracteres, em {n} cabeçalhos, descrições ou informações.",
+ "filter.hidden": "oculto — o filtro refere-se a dados pessoais"
 }

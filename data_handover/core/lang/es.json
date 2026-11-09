@@ -192,5 +192,10 @@
  "error.too_many_rows": "El ámbito tiene {n} entidades, pero una hoja de Excel admite como máximo {limit}. Reduzca el ámbito (selección, extensión del mapa, filtro de la capa).",
  "error.not_handover": "El archivo “{file}” no fue creado por Data Handover, por lo que no se puede comparar.",
  "error.key_missing": "El archivo anterior no tiene la columna clave “{key}”.",
- "error.key_duplicate": "La columna clave “{key}” tiene valores repetidos o vacíos ({n} filas): no identifica las entidades de forma única. Elija otra clave."
+ "error.key_duplicate": "La columna clave “{key}” tiene valores repetidos o vacíos ({n} filas): no identifica las entidades de forma única. Elija otra clave.",
+ "error.key_unusable": "La comparación necesita la columna clave en el archivo, sin enmascarar. Marque la columna clave en la pestaña Datos (sin enmascarar) o elija otra clave.",
+ "error.previous_edited": "El archivo “{file}” se modificó después de la exportación (las filas o columnas no coinciden con lo guardado). Elija la exportación original para comparar.",
+ "error.too_many_changes": "La comparación encontró {n} cambios, pero una hoja de Excel admite como máximo {limit}. Compare un ámbito más reducido.",
+ "note.illegal.meta": "Se eliminaron caracteres de control no permitidos, o se recortó texto de más de 32 767 caracteres, en {n} encabezados, descripciones o datos.",
+ "filter.hidden": "oculto: el filtro se refiere a datos personales"
 }

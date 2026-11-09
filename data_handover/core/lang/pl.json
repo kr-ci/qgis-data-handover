@@ -192,5 +192,10 @@
  "error.too_many_rows": "Zakres ma {n} obiektów, a arkusz Excela mieści najwyżej {limit}. Zawęź zakres (zaznaczenie, zasięg mapy, filtr warstwy).",
  "error.not_handover": "Plik „{file}” nie pochodzi z Data Handover, więc nie da się go porównać.",
  "error.key_missing": "Poprzedni plik nie zawiera kolumny-klucza „{key}”.",
- "error.key_duplicate": "Kolumna-klucz „{key}” ma powtarzające się lub puste wartości ({n} wierszy) — nie wskazuje obiektów jednoznacznie. Wybierz inny klucz."
+ "error.key_duplicate": "Kolumna-klucz „{key}” ma powtarzające się lub puste wartości ({n} wierszy) — nie wskazuje obiektów jednoznacznie. Wybierz inny klucz.",
+ "error.key_unusable": "Porównanie wymaga kolumny-klucza w pliku, bez maskowania. Zaznacz kolumnę-klucz na zakładce Dane (bez maskowania) albo wybierz inny klucz.",
+ "error.previous_edited": "Plik „{file}” zmieniono po eksporcie (wiersze lub kolumny nie zgadzają się z zapisem). Wskaż oryginalny eksport do porównania.",
+ "error.too_many_changes": "Porównanie znalazło {n} zmian, a arkusz Excela mieści najwyżej {limit}. Porównaj węższy zakres.",
+ "note.illegal.meta": "Usunięto niedozwolone znaki sterujące lub skrócono tekst dłuższy niż 32 767 znaków w {n} nagłówkach, opisach lub informacjach.",
+ "filter.hidden": "ukryty — filtr dotyczy danych osobowych"
 }

@@ -971,6 +971,8 @@ class HandoverDialog(QDialog):
             self._warn(self.t("ui.error.write", error=exc))
             return
         QApplication.restoreOverrideCursor()
+        # Dopiero udany zapis staje się podstawą następnego porównania.
+        self.layer.setCustomProperty(PREVIOUS, result.path)
         self.last_result = result
         self._report(result)
         self.accept()
@@ -988,7 +990,6 @@ class HandoverDialog(QDialog):
     def _remember(self, path: str) -> None:
         assert self.layer is not None
         self._save_state()
-        self.layer.setCustomProperty(PREVIOUS, path)  # następny eksport porówna się z tym
         self.settings.setValue(SETTINGS + "last_dir", os.path.dirname(path))
 
     def _report(self, result: xlsx.ExportResult) -> None:
@@ -996,9 +997,14 @@ class HandoverDialog(QDialog):
         text = self.t("ui.done", count=count_label(lang, result.rows), path=result.path)
         if self.iface is None:
             return
+        if result.notes:
+            # Uwagi (obcięte teksty, pominięte pola osobowe, zmiany kolumn) są
+            # w „Metryce” tylko wtedy, gdy ją włączono — autor musi je zobaczyć zawsze.
+            text += "\n" + "\n".join(f"• {note}" for note in result.notes)
         bar = self.iface.messageBar()
         item = bar.createMessage("Data Handover", text)
         button = QPushButton(self.t("ui.open"))
         button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(result.path)))
         item.layout().addWidget(button)
-        bar.pushWidget(item, Qgis.MessageLevel.Success, 10)
+        level = Qgis.MessageLevel.Warning if result.notes else Qgis.MessageLevel.Success
+        bar.pushWidget(item, level, 0 if result.notes else 10)

@@ -192,5 +192,10 @@
  "error.too_many_rows": "Le périmètre compte {n} entités, mais une feuille Excel en contient au plus {limit}. Restreignez le périmètre (sélection, emprise de la carte, filtre de la couche).",
  "error.not_handover": "Le fichier « {file} » n'a pas été créé par Data Handover et ne peut donc pas être comparé.",
  "error.key_missing": "Le fichier précédent n'a pas de colonne clé « {key} ».",
- "error.key_duplicate": "La colonne clé « {key} » contient des valeurs répétées ou vides ({n} lignes) — elle n'identifie pas les entités de façon unique. Choisissez une autre clé."
+ "error.key_duplicate": "La colonne clé « {key} » contient des valeurs répétées ou vides ({n} lignes) — elle n'identifie pas les entités de façon unique. Choisissez une autre clé.",
+ "error.key_unusable": "La comparaison exige la colonne clé dans le fichier, sans masquage. Cochez la colonne clé dans l'onglet Données (sans masquage) ou choisissez une autre clé.",
+ "error.previous_edited": "Le fichier « {file} » a été modifié après l'export (les lignes ou les colonnes ne correspondent plus à l'enregistrement). Choisissez l'export d'origine pour la comparaison.",
+ "error.too_many_changes": "La comparaison a trouvé {n} modifications, mais une feuille Excel en contient au plus {limit}. Comparez une étendue plus restreinte.",
+ "note.illegal.meta": "Caractères de contrôle interdits supprimés, ou texte de plus de 32 767 caractères coupé, dans {n} en-têtes, descriptions ou informations.",
+ "filter.hidden": "masqué — le filtre porte sur des données personnelles"
 }

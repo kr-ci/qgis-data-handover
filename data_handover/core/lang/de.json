@@ -192,5 +192,10 @@
  "error.too_many_rows": "Der Umfang enthält {n} Objekte, ein Excel-Blatt fasst aber höchstens {limit}. Schränken Sie den Umfang ein (Auswahl, Kartenausschnitt, Layerfilter).",
  "error.not_handover": "Die Datei „{file}“ wurde nicht mit Data Handover erstellt und kann daher nicht verglichen werden.",
  "error.key_missing": "Die vorherige Datei enthält keine Schlüsselspalte „{key}“.",
- "error.key_duplicate": "Die Schlüsselspalte „{key}“ enthält doppelte oder leere Werte ({n} Zeilen) — sie identifiziert Objekte nicht eindeutig. Wählen Sie einen anderen Schlüssel."
+ "error.key_duplicate": "Die Schlüsselspalte „{key}“ enthält doppelte oder leere Werte ({n} Zeilen) — sie identifiziert Objekte nicht eindeutig. Wählen Sie einen anderen Schlüssel.",
+ "error.key_unusable": "Für den Vergleich muss die Schlüsselspalte unmaskiert in der Datei stehen. Aktivieren Sie die Schlüsselspalte auf der Registerkarte Daten (ohne Maskierung) oder wählen Sie einen anderen Schlüssel.",
+ "error.previous_edited": "Die Datei „{file}“ wurde nach dem Export bearbeitet (Zeilen oder Spalten weichen vom Gespeicherten ab). Wählen Sie den ursprünglichen Export zum Vergleich.",
+ "error.too_many_changes": "Der Vergleich hat {n} Änderungen gefunden, aber ein Excel-Blatt fasst höchstens {limit}. Vergleichen Sie einen kleineren Umfang.",
+ "note.illegal.meta": "Unzulässige Steuerzeichen entfernt oder Text über 32.767 Zeichen gekürzt in {n} Überschriften, Beschreibungen oder Angaben.",
+ "filter.hidden": "ausgeblendet – der Filter betrifft personenbezogene Daten"
 }

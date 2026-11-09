@@ -9,7 +9,7 @@ from typing import Optional, Union
 
 from .model import Value
 
-Comparable = Union[None, str, float, bool]
+Comparable = Union[None, str, int, float, bool]
 
 
 class DuplicateKeyError(ValueError):
@@ -36,9 +36,9 @@ def normalize(value: Value) -> Comparable:
     Excel trzyma liczby jako float, a daty jako datetime z dokładnością
     do sekundy; pusty tekst i brak wartości są dla odbiorcy tym samym.
     """
-    if value is None or isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
+    if value is None or isinstance(value, (bool, int)):
+        return value  # int zostaje int: float zlałby identyfikatory powyżej 2**53
+    if isinstance(value, float):
         return round(float(value), 9)
     if isinstance(value, dt.datetime):
         return value.replace(microsecond=0, tzinfo=None).isoformat()

@@ -253,6 +253,13 @@ def build_package(
         if len(rows) > MAX_ROWS:
             raise PackageError(tr(language, "error.too_many_rows", n=len(rows), limit=MAX_ROWS))
 
+    # Filtr warstwy wpisany do „Metryki” mógłby zdradzić wartość pola osobowego,
+    # którego nie eksportujemy jawnie (np. "email" = 'anna@example.com').
+    plain = {c.name for c in columns if not c.masked}
+    subset = layer.subsetString()
+    if privacy.mentions(subset, [name for name in personal if name not in plain]):
+        subset = tr(language, "filter.hidden")
+
     crs = layer.crs()
     facts = [
         ("title", title or layer.name()),
@@ -262,7 +269,7 @@ def build_package(
         ("provider", layer.providerType()),
         ("crs", f"{crs.authid()} — {crs.description()}" if crs.isValid() else ""),
         ("scope", tr(language, f"scope.{scope}")),
-        ("filter", layer.subsetString()),
+        ("filter", subset),
         ("count", str(len(rows))),
         ("total", str(layer.featureCount())),
         ("author", author),
