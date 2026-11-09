@@ -2,13 +2,18 @@
 
 Sprawdza odczyt warstwy (aliasy, value map, daty, NULL, dane osobowe),
 trzy zakresy eksportu, porównanie wersji, ładowanie wtyczki i okno
-(zrzuty zakładek trafiają do build/screens/).
+(zrzuty zakładek trafiają do build/screens/) oraz algorytm Processing
+(także przez `qgis_process`).
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import glob
+import json
 import os
+import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -16,19 +21,25 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.append("/usr/share/qgis/python/plugins")  # moduł processing
 
 from qgis.core import (  # noqa: E402
     Qgis,
+    QgsApplication,
     QgsEditorWidgetSetup,
     QgsFeature,
     QgsGeometry,
     QgsPointXY,
+    QgsProcessingAlgRunnerTask,
+    QgsProcessingContext,
+    QgsProcessingFeedback,
     QgsProject,
     QgsRectangle,
     QgsSettings,
+    QgsVectorFileWriter,
     QgsVectorLayer,
 )
-from qgis.PyQt.QtCore import QDate, QTimer  # noqa: E402
+from qgis.PyQt.QtCore import QDate, QSettings, QTimer  # noqa: E402
 from qgis.PyQt.QtWidgets import QApplication  # noqa: E402
 from qgis.testing import start_app  # noqa: E402
 
@@ -37,8 +48,8 @@ app = start_app()
 from openpyxl import load_workbook  # noqa: E402
 
 from data_handover import classFactory, layer_reader  # noqa: E402
-from data_handover.core.i18n import tr  # noqa: E402
-from data_handover.core.model import HEADER_ROW, THEMES, Look, Sheets, look_with_theme  # noqa: E402
+from data_handover.core.i18n import LANGUAGES, tr  # noqa: E402
+from data_handover.core.model import HEADER_ROW, THEMES, Look, Sheets, look_with_theme, to_dict  # noqa: E402
 from data_handover.core.xlsx import export  # noqa: E402
 from data_handover.dialog import HandoverDialog  # noqa: E402
 from data_handover.export_task import ExportTask  # noqa: E402
@@ -150,6 +161,250 @@ def background(small: QgsVectorLayer) -> None:
     sheet = load_workbook(str(OUT / "usunieta.xlsx"), read_only=True).worksheets[0]
     check(list(sheet.iter_rows(min_row=HEADER_ROW + 1, max_row=HEADER_ROW + 1, values_only=True))[0][3] == "usługi",
           "etykieta value map z zadania w tle")
+
+
+# Data eksportu (podpis nad tabelą, „Metryka”, arkusz techniczny) różni się między dwoma plikami.
+STAMP = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?|\d{2}[./]\d{2}[./]\d{4},? \d{2}:\d{2}(:\d{2})?")
+
+
+def workbook_cells(path: str) -> dict[str, object]:
+    """Treść i wygląd wszystkich arkuszy — do porównania dwóch plików (bez daty eksportu)."""
+    wb = load_workbook(path)
+    sheets: dict[str, object] = {}
+    for ws in wb.worksheets:
+        cells = []
+        for row in ws.iter_rows():
+            for c in row:
+                value = STAMP.sub("<data>", c.value) if isinstance(c.value, str) else c.value
+                color = c.font.color.rgb if c.font.color is not None else None
+                cells.append((c.coordinate, value, c.number_format, c.font.name, c.font.sz, c.font.b, color,
+                              c.fill.fgColor.rgb, repr(c.border), c.alignment.horizontal))
+        rules = [(str(cf.sqref), r.formula) for cf in ws.conditional_formatting for r in cf.rules]
+        sheets[ws.title] = (ws.sheet_state, cells, sorted(ws.tables), ws.freeze_panes, rules,
+                            ws.sheet_properties.tabColor.rgb if ws.sheet_properties.tabColor else None)
+    return sheets
+
+
+def gpkg_layer(name: str) -> QgsVectorLayer:
+    """Warstwa testowa zapisana do GeoPackage (`qgis_process` czyta ją z pliku projektu)."""
+    memory = make_layer()
+    path = str(OUT / f"{name}.gpkg")
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.driverName = "GPKG"
+    options.layerName = name
+    error = QgsVectorFileWriter.writeAsVectorFormatV3(memory, path, QgsProject.instance().transformContext(),
+                                                      options)
+    assert error[0] == QgsVectorFileWriter.WriterError.NoError, error
+    layer = QgsVectorLayer(path, name, "ogr")
+    assert layer.isValid() and layer.featureCount() == 3
+    for i, field in enumerate(memory.fields()):
+        index = layer.fields().indexOf(field.name())
+        layer.setFieldAlias(index, memory.attributeAlias(i))
+        layer.setEditorWidgetSetup(index, memory.editorWidgetSetup(i))
+    QgsProject.instance().removeMapLayer(memory.id())
+    QgsProject.instance().addMapLayer(layer)
+    return layer
+
+
+def window_export(iface: object, layer: QgsVectorLayer, path: str) -> None:
+    """Eksport z okna z zapisanymi ustawieniami (okno dostaje ścieżkę zamiast okna zapisu)."""
+    import data_handover.dialog as dialog_module
+
+    dialog_module.QFileDialog.getSaveFileName = lambda *args, **kwargs: (path, "")
+    layer.setCustomProperty(dialog_module.PREVIOUS, "")  # bez arkusza „Zmiany”
+    box = HandoverDialog(iface, None, layer=layer)
+    box.export()
+    wait(box.task)
+    assert box.last_result is not None, box.task.error
+
+
+def processing_algorithm(iface: object) -> None:
+    """R6: algorytm Processing daje plik identyczny z eksportem z okna przy tych samych ustawieniach."""
+    import processing  # noqa: E402
+
+    plugin = classFactory(iface)
+    plugin.initGui()
+    alg = QgsApplication.processingRegistry().algorithmById("dataHandover:package")
+    check(alg is not None, "initGui rejestruje algorytm dataHandover:package")
+
+    layer = gpkg_layer("dzialki_r6")
+    # Ustawienia pól jak po pracy w oknie: kolejność, nagłówek, jednostka, opis, pominięta kolumna, klucz.
+    names = layer.fields().names()
+    choices = [FieldChoice(n, export=n not in ("nazwisko", "data_akt")) for n in ["teryt"] + [
+        n for n in names if n != "teryt"]]
+    for c in choices:
+        if c.name == "pow_m2":
+            c.header, c.unit, c.description = "Pow. [m²]", "m²", "Powierzchnia z ewidencji"
+        if c.name == "nr_ident":
+            c.protect = "mask"
+    layer_reader.save_choices(layer, choices, "nr_dz")
+    look = look_with_theme(Look(as_table=False), THEMES["forest"])
+    settings = {"look": json.dumps(to_dict(look)),
+                "sheets": json.dumps(to_dict(Sheets(dictionary=True, about=True))),
+                "author": "Wydział Geodezji", "file_language": "pl"}
+    for key, value in settings.items():
+        QgsSettings().setValue("data_handover/" + key, value)
+
+    from_window = str(OUT / "r6_okno.xlsx")
+    window_export(iface, layer, from_window)
+    from_alg = str(OUT / "r6_algorytm.xlsx")
+    result = processing.run("dataHandover:package", {"INPUT": layer, "OUTPUT": from_alg})
+    check(result["OUTPUT"] == from_alg and workbook_cells(from_alg) == workbook_cells(from_window),
+          "processing.run: plik identyczny z eksportem z okna (arkusze, wartości, wygląd)")
+    data = load_workbook(from_alg)["Dane"]
+    check(load_workbook(from_alg).sheetnames[:3] == ["Dane", "Słownik", "Metryka"] and not data.tables
+          and data.cell(row=HEADER_ROW, column=1).fill.fgColor.rgb.endswith(THEMES["forest"].header_fill)
+          and data.cell(row=HEADER_ROW, column=1).value == "teryt",
+          "arkusze, język, wygląd i kolejność kolumn z ustawień okna")
+    english = str(OUT / "r6_en.xlsx")
+    processing.run("dataHandover:package", {"INPUT": layer, "LANGUAGE": 1 + LANGUAGES.index("en"), "OUTPUT": english})
+    check(load_workbook(english).sheetnames[0] == tr("en", "sheet.data"), "język pliku wybrany w parametrze")
+
+    # Przybornik uruchamia algorytm w tle: przygotowanie w wątku okna, zapis w wątku tła.
+    in_background = str(OUT / "r6_w_tle.xlsx")
+    context, feedback = QgsProcessingContext(), QgsProcessingFeedback()
+    context.setProject(QgsProject.instance())
+    task = QgsProcessingAlgRunnerTask(alg, {"INPUT": layer.id(), "OUTPUT": in_background}, context, feedback)
+    finished: list[bool] = []
+    task.executed.connect(lambda ok, _results: finished.append(ok))
+    QgsApplication.taskManager().addTask(task)
+    deadline = time.monotonic() + 60
+    while not finished and time.monotonic() < deadline:
+        QApplication.processEvents()
+        time.sleep(0.005)
+    check(finished == [True] and workbook_cells(in_background) == workbook_cells(from_window),
+          "algorytm w tle (jak z Przybornika) daje ten sam plik")
+
+    model_thread(layer, from_window)
+
+    themed = str(OUT / "r6_motyw.xlsx")
+    processing.run("dataHandover:package", {"INPUT": layer, "THEME": 1 + list(THEMES).index("plum"),
+                                            "OUTPUT": themed})
+    header = load_workbook(themed)["Dane"].cell(row=HEADER_ROW, column=1)
+    check(header.fill.fgColor.rgb.endswith(THEMES["plum"].header_fill) and header.font.name == look.header.font,
+          "motyw zmienia kolory zapisanego wyglądu, układ zostaje")
+
+    compared = str(OUT / "r6_zmiany.xlsx")
+    processing.run("dataHandover:package", {"INPUT": layer, "PREVIOUS": from_window, "OUTPUT": compared})
+    check("Zmiany" in load_workbook(compared).sheetnames, "poprzedni plik bez klucza: klucz zapisany w oknie")
+    layer_reader.save_choices(layer, choices, None)
+    class Errors(QgsProcessingFeedback):
+        """Komunikaty błędów, które użytkownik widzi w oknie algorytmu."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.messages: list[str] = []
+
+        def reportError(self, error: str, fatalError: bool = False) -> None:  # noqa: N802, N803
+            self.messages.append(error)
+
+    errors = Errors()
+    for params in ({"PREVIOUS": from_window}, {"PREVIOUS": str(OUT / "nie_ma.xlsx"), "KEY": "nr_dz"},
+                   {"SELECTED_ONLY": True}):
+        try:
+            processing.run("dataHandover:package", {"INPUT": layer, "OUTPUT": str(OUT / "zly.xlsx"), **params},
+                           feedback=errors)
+        except Exception:  # noqa: S110 - QgsProcessingException; treść sprawdzamy w `errors`
+            pass
+    lang = ui_language()
+    expected = [tr(lang, k) for k in ("ui.error.no_key", "ui.error.no_previous", "alg.error.no_selection")]
+    check(all(e in errors.messages for e in expected) and not os.path.exists(OUT / "zly.xlsx"),
+          "brak klucza, brak poprzedniego pliku, brak zaznaczenia: czytelny błąd, bez pliku")
+    layer.selectByIds([next(layer.getFeatures()).id()])
+    selected = str(OUT / "r6_zaznaczone.xlsx")
+    processing.run("dataHandover:package", {"INPUT": layer, "SELECTED_ONLY": True, "OUTPUT": selected})
+    check(load_workbook(selected)["Dane"].max_row == HEADER_ROW + 1, "tylko zaznaczone")
+    layer.removeSelection()
+    layer_reader.save_choices(layer, choices, "nr_dz")
+    qgis_process(iface, layer, settings)
+    for key in settings:
+        QgsSettings().remove("data_handover/" + key)
+    plugin.unload()
+    check(QgsApplication.processingRegistry().algorithmById("dataHandover:package") is None,
+          "unload wyrejestrowuje algorytm")
+
+
+def model_thread(layer: QgsVectorLayer, from_window: str) -> None:
+    """W modelu graficznym (uruchomionym w tle) QGIS woła prepareAlgorithm w wątku okna."""
+    from qgis.core import (
+        QgsProcessingModelAlgorithm,
+        QgsProcessingModelChildAlgorithm,
+        QgsProcessingModelChildParameterSource,
+        QgsProcessingModelOutput,
+        QgsProcessingModelParameter,
+        QgsProcessingParameterVectorLayer,
+    )
+    from qgis.PyQt.QtCore import QThread
+
+    from data_handover import processing_provider
+
+    on_main: list[bool] = []
+    original = processing_provider.PackageAlgorithm.prepareAlgorithm
+
+    def spy(self: object, *args: object) -> bool:
+        on_main.append(QThread.currentThread() == QApplication.instance().thread())
+        return original(self, *args)  # type: ignore[arg-type]
+
+    processing_provider.PackageAlgorithm.prepareAlgorithm = spy  # type: ignore[method-assign]
+    model = QgsProcessingModelAlgorithm("r6", "testy")
+    model.addModelParameter(QgsProcessingParameterVectorLayer("warstwa", "warstwa"),
+                            QgsProcessingModelParameter("warstwa"))
+    child = QgsProcessingModelChildAlgorithm("dataHandover:package")
+    child.setChildId("paczka")
+    child.addParameterSources("INPUT", [QgsProcessingModelChildParameterSource.fromModelParameter("warstwa")])
+    output = QgsProcessingModelOutput("plik", "plik")
+    output.setChildId("paczka")
+    output.setChildOutputName("OUTPUT")
+    child.setModelOutputs({"plik": output})
+    model.addChildAlgorithm(child)
+    model.updateDestinationParameters()
+    path = str(OUT / "r6_model.xlsx")
+    context, feedback = QgsProcessingContext(), QgsProcessingFeedback()
+    context.setProject(QgsProject.instance())
+    task = QgsProcessingAlgRunnerTask(model, {"warstwa": layer.id(), "paczka:plik": path}, context, feedback)
+    finished: list[bool] = []
+    task.executed.connect(lambda ok, _results: finished.append(ok))
+    QgsApplication.taskManager().addTask(task)
+    deadline = time.monotonic() + 60
+    while not finished and time.monotonic() < deadline:
+        QApplication.processEvents()
+        time.sleep(0.005)
+    processing_provider.PackageAlgorithm.prepareAlgorithm = original  # type: ignore[method-assign]
+    check(finished == [True] and on_main == [True] and workbook_cells(path) == workbook_cells(from_window),
+          f"model graficzny w tle: przygotowanie w wątku okna, ten sam plik ({finished}, {on_main})")
+
+
+def qgis_process(iface: object, layer: QgsVectorLayer, settings: dict[str, str]) -> None:
+    """Kryterium R6: `qgis_process run dataHandover:package` daje ten sam plik co okno."""
+    project = str(OUT / "r6.qgz")
+    check(QgsProject.instance().write(project), "projekt z ustawieniami pól zapisany")
+    env = dict(os.environ, QGIS_PLUGINPATH=str(ROOT), QT_QPA_PLATFORM="offscreen")
+    env.pop("QGIS_CUSTOM_CONFIG_PATH", None)  # profil jak u użytkownika, nie testowy
+
+    def run(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["qgis_process", *args], env=env, capture_output=True, text=True, timeout=180)
+
+    enabled = run("plugins", "enable", "data_handover")
+    assert enabled.returncode == 0, enabled.stdout + enabled.stderr
+    # W prawdziwej instalacji okno i qgis_process czytają ten sam profil — test ma osobny,
+    # więc ustawienia okna kopiujemy do pliku ustawień qgis_process.
+    inis = [p for p in glob.glob(os.path.expanduser("~/.local/share/QGIS/*/profiles/default/QGIS/*.ini"))
+            if "data_handover=true" in Path(p).read_text(errors="replace")]
+    assert len(inis) == 1, inis
+    ini = QSettings(inis[0], QSettings.Format.IniFormat)
+    for key, value in settings.items():
+        ini.setValue("data_handover/" + key, value)
+    ini.sync()
+
+    from_window = str(OUT / "r6_okno_qgis_process.xlsx")
+    window_export(iface, layer, from_window)
+    from_cli = str(OUT / "r6_qgis_process.xlsx")
+    done = run("run", "dataHandover:package", f"--PROJECT_PATH={project}", "--",
+               f"INPUT={layer.id()}", f"LANGUAGE={1 + LANGUAGES.index('pl')}", f"OUTPUT={from_cli}")
+    check(done.returncode == 0 and os.path.isfile(from_cli), f"qgis_process run dataHandover:package "
+          f"(kod {done.returncode}){'' if done.returncode == 0 else ': ' + done.stdout[-800:] + done.stderr[-800:]}")
+    check(workbook_cells(from_cli) == workbook_cells(from_window),
+          "qgis_process: plik identyczny z eksportem z okna")
 
 
 def check(condition: bool, message: str) -> None:
@@ -320,6 +575,7 @@ def main() -> None:
     wait(box.task)
     check(box.layer_gone and box.last_result is not None, "warstwa usunięta w trakcie: plik jest, podstawy brak")
 
+    processing_algorithm(iface)
     background(layer)
 
     # Plik do obejrzenia (zrzut arkuszy robi scripts/render-xlsx.sh).

@@ -67,9 +67,8 @@ from .core.model import (
     to_dict,
 )
 from .layer_reader import FieldChoice
-from .plugin import UI_LANGUAGE, ui_language
+from .plugin import SETTINGS, UI_LANGUAGE, saved_json, ui_language
 
-SETTINGS = "data_handover/"
 PREVIOUS = "data_handover/previous"
 DEFAULT_LANGUAGE = "en"  # język pliku, dopóki użytkownik nie wybierze innego
 # Stały wygląd okna — niezależny od stylu pliku, który użytkownik ustawia.
@@ -265,8 +264,8 @@ class HandoverDialog(QDialog):
         root.addLayout(footer)
 
         self._apply_window_style()
-        self._set_look(from_dict(Look, self._saved_json("look")))
-        self._set_sheets(from_dict(Sheets, self._saved_json("sheets")))
+        self._set_look(from_dict(Look, saved_json("look")))
+        self._set_sheets(from_dict(Sheets, saved_json("sheets")))
         self.layer_combo.layerChanged.connect(self._load_layer)
         if layer is not None:
             self.layer_combo.setLayer(layer)
@@ -274,12 +273,6 @@ class HandoverDialog(QDialog):
 
     def t(self, text_id: str, **kwargs: object) -> str:
         return tr(self.lang, text_id, **kwargs)
-
-    def _saved_json(self, name: str) -> Any:
-        try:
-            return json.loads(str(self.settings.value(SETTINGS + name, "") or "null"))
-        except ValueError:
-            return None
 
     # ------------------------------------------------------------------ UI
 

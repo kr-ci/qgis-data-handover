@@ -109,6 +109,33 @@ def load_choices(layer: QgsVectorLayer) -> dict[str, dict[str, Any]]:
     return data if isinstance(data, dict) else {}
 
 
+def saved_choices(layer: QgsVectorLayer, personal: dict[str, str]) -> tuple[list[FieldChoice], Optional[str]]:
+    """Ustawienia pól i klucz tak, jak okno pokazuje je po otwarciu.
+
+    Pole bez zapisanych ustawień: eksportowane, chyba że wygląda na dane
+    osobowe; pole osobowe eksportowane jawnie — domyślnie maskowane.
+    """
+    saved = load_choices(layer)
+    stored = saved.get("fields", {})
+    stored = stored if isinstance(stored, dict) else {}
+    names = layer.fields().names()
+    order = [n for n in dict.fromkeys(saved.get("order", [])) if n in names]
+    order += [n for n in names if n not in order]
+    choices = []
+    for name in order:
+        info = stored.get(name)
+        info = info if isinstance(info, dict) else {}
+        choices.append(FieldChoice(
+            name=name,
+            export=bool(info.get("export", name not in personal)),
+            header=str(info.get("header") or "").strip(),
+            unit=str(info.get("unit") or "").strip(),
+            description=str(info.get("description") or "").strip(),
+            protect=str(info.get("protect") or "mask") if name in personal else "",
+        ))
+    return choices, str(saved.get("key") or "") or None
+
+
 def save_choices(layer: QgsVectorLayer, choices: list[FieldChoice], key: Optional[str]) -> None:
     data = {
         "order": [c.name for c in choices],
@@ -176,7 +203,8 @@ def sample_values(layer: QgsVectorLayer, limit: int = SAMPLE, represented: bool 
 def personal_data(layer: QgsVectorLayer) -> dict[str, str]:
     """{nazwa pola: powód} dla pól, które wyglądają na dane osobowe."""
     fields = [(f.name(), layer.attributeDisplayName(i)) for i, f in enumerate(layer.fields())]
-    return {f.field: f.reason for f in privacy.detect(fields, sample_values(layer))}
+    # Próbki z etykietami (jak w oknie), żeby okno i algorytm Processing oceniły pola tak samo.
+    return {f.field: f.reason for f in privacy.detect(fields, sample_values(layer, represented=True))}
 
 
 def describe(layer: QgsVectorLayer, index: int, choice: FieldChoice) -> Column:

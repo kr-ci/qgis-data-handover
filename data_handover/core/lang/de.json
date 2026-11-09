@@ -201,5 +201,13 @@
  "error.previous_edited": "Die Datei „{file}“ wurde nach dem Export bearbeitet (Zeilen oder Spalten weichen vom Gespeicherten ab). Wählen Sie den ursprünglichen Export zum Vergleich.",
  "error.too_many_changes": "Der Vergleich hat {n} Änderungen gefunden, aber ein Excel-Blatt fasst höchstens {limit}. Vergleichen Sie einen kleineren Umfang.",
  "note.illegal.meta": "Unzulässige Steuerzeichen entfernt oder Text über 32.767 Zeichen gekürzt in {n} Überschriften, Beschreibungen oder Angaben.",
- "filter.hidden": "ausgeblendet – der Filter betrifft personenbezogene Daten"
+ "filter.hidden": "ausgeblendet – der Filter betrifft personenbezogene Daten",
+ "alg.name": "Daten übergeben (XLSX)",
+ "alg.help": "Exportiert den Layer in eine formatierte Excel-Arbeitsmappe — dieselbe Datei wie aus dem Data-Handover-Fenster, ohne es zu öffnen. Für den Stapelmodus, Modelle und qgis_process.\n\nSpalten, Überschriften, Einheiten, Beschreibungen, Spaltenreihenfolge, Entscheidungen zu personenbezogenen Daten und die Schlüsselspalte stammen aus den Layer-Einstellungen, die das Plugin-Fenster im Projekt gespeichert hat. Aussehen, zusätzliche Blätter, Verfasser und Dateisprache stammen aus den gespeicherten Fenstereinstellungen; eine hier gewählte Farbvorlage oder Dateisprache hat Vorrang.\n\nFür das Blatt „Änderungen“ die vorherige Datei angeben. Die Schlüsselspalte gilt nur zusammen mit der vorherigen Datei; bleibt sie leer, wird der im Fenster gespeicherte Schlüssel verwendet.",
+ "alg.input": "Layer",
+ "alg.selected": "Nur gewählte Objekte",
+ "alg.as_window": "Wie im Plugin-Fenster",
+ "alg.output": "Excel-Datei",
+ "alg.error.no_fields": "Alle Spalten dieses Layers sind im Plugin-Fenster ausgeschaltet. Aktivieren Sie dort mindestens eine Spalte.",
+ "alg.error.no_selection": "Der Layer hat keine gewählten Objekte."
 }

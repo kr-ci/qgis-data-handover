@@ -44,6 +44,30 @@ list in the footer (English by default); the file language is a separate
 choice on the Sheets tab. Column headers and values come from the layer,
 so they stay in the language of the data.
 
+## Processing, batch mode and `qgis_process`
+
+The same export is available as a Processing algorithm, **Data Handover →
+Hand over data (XLSX)** (`dataHandover:package`): in the Processing
+Toolbox, in batch mode, in graphical models and from the command line.
+It produces the same file as the window. Columns, headers, units,
+descriptions, column order, personal data choices and the key column come
+from the layer settings the window saved in the project; the look, extra
+sheets, author and file language come from the window's saved settings.
+Parameters: layer, selected features only, file language and colour preset
+(both "As in the plugin window" by default), previous file and key column
+(for the Changes sheet; an empty key means the key saved in the window).
+
+```bash
+qgis_process plugins enable data_handover
+qgis_process help dataHandover:package      # parameters and their values
+qgis_process run dataHandover:package --PROJECT_PATH=project.qgz -- \
+    INPUT=parcels OUTPUT=/data/parcels.xlsx
+```
+
+`qgis_process` reads the settings of the QGIS user profile, so run it as
+the same system user who set up the window. Without that profile the
+default look applies; columns still come from the project.
+
 ## Requirements and installation
 
 - QGIS 3.40–3.44 or 4.x (tested: 3.40, 3.44.15, 4.2.3).

@@ -201,5 +201,13 @@
  "error.previous_edited": "Plik „{file}” zmieniono po eksporcie (wiersze lub kolumny nie zgadzają się z zapisem). Wskaż oryginalny eksport do porównania.",
  "error.too_many_changes": "Porównanie znalazło {n} zmian, a arkusz Excela mieści najwyżej {limit}. Porównaj węższy zakres.",
  "note.illegal.meta": "Usunięto niedozwolone znaki sterujące lub skrócono tekst dłuższy niż 32 767 znaków w {n} nagłówkach, opisach lub informacjach.",
- "filter.hidden": "ukryty — filtr dotyczy danych osobowych"
+ "filter.hidden": "ukryty — filtr dotyczy danych osobowych",
+ "alg.name": "Przekaż dane (XLSX)",
+ "alg.help": "Eksportuje warstwę do sformatowanego skoroszytu Excela — ten sam plik co z okna Data Handover, bez otwierania go. Do trybu wsadowego, modeli i qgis_process.\n\nKolumny, nagłówki, jednostki, opisy, kolejność kolumn, decyzje o danych osobowych i kolumna klucza pochodzą z ustawień warstwy zapisanych w projekcie przez okno wtyczki. Wygląd, arkusze dodatkowe, autor i język pliku pochodzą z zapisanych ustawień okna; wybrana tu kolorystyka albo język pliku mają pierwszeństwo.\n\nŻeby dodać arkusz „Zmiany”, wskaż poprzedni plik. Kolumna klucza liczy się tylko razem z poprzednim plikiem; pusta oznacza klucz zapisany w oknie.",
+ "alg.input": "Warstwa",
+ "alg.selected": "Tylko zaznaczone obiekty",
+ "alg.as_window": "Jak w oknie wtyczki",
+ "alg.output": "Plik Excela",
+ "alg.error.no_fields": "Wszystkie kolumny tej warstwy są wyłączone w oknie wtyczki. Zaznacz tam co najmniej jedną kolumnę.",
+ "alg.error.no_selection": "Warstwa nie ma zaznaczonych obiektów."
 }

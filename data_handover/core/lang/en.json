@@ -201,5 +201,13 @@
  "error.previous_edited": "File “{file}” was edited after the export (rows or columns differ from what was saved). Choose the original export to compare with.",
  "error.too_many_changes": "The comparison found {n} changes, but an Excel sheet holds at most {limit}. Compare a narrower scope.",
  "note.illegal.meta": "Illegal control characters removed, or text over 32,767 characters cut, in {n} headers, descriptions or details.",
- "filter.hidden": "hidden — the filter refers to personal data"
+ "filter.hidden": "hidden — the filter refers to personal data",
+ "alg.name": "Hand over data (XLSX)",
+ "alg.help": "Exports the layer to a formatted Excel workbook — the same file as the Data Handover window, without opening it. Use it in batch mode, in models and with qgis_process.\n\nColumns, headers, units, descriptions, column order, personal data choices and the key column come from the layer settings saved in the project by the plugin window. The look, extra sheets, author and file language come from the window's saved settings; a colour preset or file language chosen here takes precedence.\n\nTo add the “Changes” sheet, give the previous file. The key column is used only together with the previous file; if left empty, the key saved in the window is used.",
+ "alg.input": "Layer",
+ "alg.selected": "Selected features only",
+ "alg.as_window": "As in the plugin window",
+ "alg.output": "Excel file",
+ "alg.error.no_fields": "All columns of this layer are switched off in the plugin window. Tick at least one column there.",
+ "alg.error.no_selection": "The layer has no selected features."
 }

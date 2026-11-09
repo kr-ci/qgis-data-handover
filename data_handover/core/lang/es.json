@@ -201,5 +201,13 @@
  "error.previous_edited": "El archivo “{file}” se modificó después de la exportación (las filas o columnas no coinciden con lo guardado). Elija la exportación original para comparar.",
  "error.too_many_changes": "La comparación encontró {n} cambios, pero una hoja de Excel admite como máximo {limit}. Compare un ámbito más reducido.",
  "note.illegal.meta": "Se eliminaron caracteres de control no permitidos, o se recortó texto de más de 32 767 caracteres, en {n} encabezados, descripciones o datos.",
- "filter.hidden": "oculto: el filtro se refiere a datos personales"
+ "filter.hidden": "oculto: el filtro se refiere a datos personales",
+ "alg.name": "Entregar datos (XLSX)",
+ "alg.help": "Exporta la capa a un libro de Excel con formato: el mismo archivo que desde la ventana de Data Handover, sin abrirla. Para el modo por lotes, los modelos y qgis_process.\n\nLas columnas, encabezados, unidades, descripciones, el orden de las columnas, las decisiones sobre datos personales y la columna clave proceden de los ajustes de la capa guardados en el proyecto por la ventana del complemento. El aspecto, las hojas adicionales, el autor y el idioma del archivo proceden de los ajustes guardados de la ventana; una paleta o un idioma elegidos aquí tienen prioridad.\n\nPara añadir la hoja «Cambios», indique el archivo anterior. La columna clave solo se usa junto con el archivo anterior; si se deja vacía, se usa la clave guardada en la ventana.",
+ "alg.input": "Capa",
+ "alg.selected": "Solo objetos seleccionados",
+ "alg.as_window": "Como en la ventana del complemento",
+ "alg.output": "Archivo de Excel",
+ "alg.error.no_fields": "Todas las columnas de esta capa están desactivadas en la ventana del complemento. Marque allí al menos una columna.",
+ "alg.error.no_selection": "La capa no tiene objetos seleccionados."
 }

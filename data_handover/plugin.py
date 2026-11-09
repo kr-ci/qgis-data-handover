@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Optional
 
-from qgis.core import Qgis, QgsSettings
+from qgis.core import Qgis, QgsApplication, QgsSettings
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QMessageBox
 
@@ -19,14 +20,24 @@ from .core.i18n import supported, tr
 MENU = "&Data Handover"
 
 
-UI_LANGUAGE = "data_handover/ui_language"
+# Ustawienia okna w profilu użytkownika QGIS. Tu, nie w dialog.py: initGui()
+# i algorytm Processing nie mogą importować niczego, co ciągnie openpyxl,
+# bo bez niego wtyczka nie wczytałaby się wcale.
+SETTINGS = "data_handover/"
+UI_LANGUAGE = SETTINGS + "ui_language"
 
 
 def ui_language() -> str:
     """Język okna wybrany w stopce okna; domyślnie angielski."""
-    # Tu, nie w dialog.py: initGui() nie może importować niczego, co ciągnie
-    # openpyxl, bo bez niego wtyczka nie wczytałaby się wcale.
     return supported(str(QgsSettings().value(UI_LANGUAGE, "en") or "en"))
+
+
+def saved_json(name: str) -> Any:
+    """Ustawienie okna zapisane jako JSON (wygląd, arkusze); None, gdy brak albo uszkodzone."""
+    try:
+        return json.loads(str(QgsSettings().value(SETTINGS + name, "") or "null"))
+    except ValueError:
+        return None
 
 
 class DataHandoverPlugin:
@@ -34,8 +45,16 @@ class DataHandoverPlugin:
         self.iface = iface
         self.action: Optional[QAction] = None
         self.layer_action: Optional[QAction] = None
+        self.provider: Any = None
+
+    def initProcessing(self) -> None:  # noqa: N802 - nazwa wymagana przez QGIS (także qgis_process)
+        from .processing_provider import Provider
+
+        self.provider = Provider()
+        QgsApplication.processingRegistry().addProvider(self.provider)
 
     def initGui(self) -> None:  # noqa: N802 - nazwa wymagana przez QGIS
+        self.initProcessing()
         lang = ui_language()
         icon = QIcon(os.path.join(os.path.dirname(__file__), "icon.svg"))
         window = self.iface.mainWindow()
@@ -48,6 +67,8 @@ class DataHandoverPlugin:
         self.iface.addCustomActionForLayerType(self.layer_action, "", Qgis.LayerType.Vector, True)
 
     def unload(self) -> None:
+        if self.provider is not None:
+            QgsApplication.processingRegistry().removeProvider(self.provider)
         if self.action is not None:
             self.iface.removePluginMenu(MENU, self.action)
             self.iface.removeToolBarIcon(self.action)

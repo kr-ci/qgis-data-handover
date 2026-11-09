@@ -43,6 +43,30 @@ rosyjsku, koreańsku, japońsku i chińsku. Język okna wybierasz na liście
 osobno w zakładce Arkusze. Nagłówki i wartości kolumn pochodzą z warstwy,
 więc zostają w języku danych.
 
+## Processing, tryb wsadowy i `qgis_process`
+
+Ten sam eksport jest dostępny jako algorytm Processing **Data Handover →
+Przekaż dane (XLSX)** (`dataHandover:package`): w Przyborniku Processing,
+w trybie wsadowym, w modelu graficznym i z wiersza poleceń. Daje ten sam
+plik co okno. Kolumny, nagłówki, jednostki, opisy, kolejność kolumn,
+decyzje o danych osobowych i kolumnę klucza bierze z ustawień warstwy,
+które okno zapisało w projekcie; wygląd, arkusze dodatkowe, autora i język
+pliku — z zapisanych ustawień okna. Parametry: warstwa, tylko zaznaczone
+obiekty, język pliku i gotowa kolorystyka (domyślnie „Jak w oknie
+wtyczki”), poprzedni plik i kolumna klucza (do arkusza Zmiany; pusty klucz
+oznacza klucz zapisany w oknie).
+
+```bash
+qgis_process plugins enable data_handover
+qgis_process help dataHandover:package      # parametry i ich wartości
+qgis_process run dataHandover:package --PROJECT_PATH=projekt.qgz -- \
+    INPUT=dzialki OUTPUT=/dane/dzialki.xlsx
+```
+
+`qgis_process` czyta ustawienia profilu użytkownika QGIS, więc uruchamiaj
+go jako ten sam użytkownik systemu, który ustawiał okno. Bez tego profilu
+obowiązuje domyślny wygląd; kolumny i tak pochodzą z projektu.
+
 ## Wymagania i instalacja
 
 - QGIS 3.40–3.44 albo 4.x (sprawdzone: 3.40, 3.44.15, 4.2.3).

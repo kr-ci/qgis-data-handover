@@ -201,5 +201,13 @@
  "error.previous_edited": "O ficheiro “{file}” foi editado depois da exportação (as linhas ou colunas não correspondem ao que foi guardado). Escolha a exportação original para comparar.",
  "error.too_many_changes": "A comparação encontrou {n} alterações, mas uma folha do Excel comporta no máximo {limit}. Compare um âmbito mais restrito.",
  "note.illegal.meta": "Foram removidos caracteres de controlo não permitidos, ou cortado texto com mais de 32 767 caracteres, em {n} cabeçalhos, descrições ou informações.",
- "filter.hidden": "oculto — o filtro refere-se a dados pessoais"
+ "filter.hidden": "oculto — o filtro refere-se a dados pessoais",
+ "alg.name": "Entregar dados (XLSX)",
+ "alg.help": "Exporta a camada para uma pasta de trabalho do Excel formatada — o mesmo arquivo da janela do Data Handover, sem abri-la. Para o modo em lote, modelos e qgis_process.\n\nAs colunas, cabeçalhos, unidades, descrições, a ordem das colunas, as escolhas sobre dados pessoais e a coluna-chave vêm das configurações da camada salvas no projeto pela janela do complemento. A aparência, as planilhas adicionais, o autor e o idioma do arquivo vêm das configurações salvas da janela; uma paleta ou um idioma escolhidos aqui têm prioridade.\n\nPara adicionar a planilha “Alterações”, indique o arquivo anterior. A coluna-chave só é usada junto com o arquivo anterior; se ficar vazia, é usada a chave salva na janela.",
+ "alg.input": "Camada",
+ "alg.selected": "Somente feições selecionadas",
+ "alg.as_window": "Como na janela do complemento",
+ "alg.output": "Arquivo do Excel",
+ "alg.error.no_fields": "Todas as colunas desta camada estão desativadas na janela do complemento. Marque lá pelo menos uma coluna.",
+ "alg.error.no_selection": "A camada não tem feições selecionadas."
 }

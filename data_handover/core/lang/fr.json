@@ -201,5 +201,13 @@
  "error.previous_edited": "Le fichier « {file} » a été modifié après l'export (les lignes ou les colonnes ne correspondent plus à l'enregistrement). Choisissez l'export d'origine pour la comparaison.",
  "error.too_many_changes": "La comparaison a trouvé {n} modifications, mais une feuille Excel en contient au plus {limit}. Comparez une étendue plus restreinte.",
  "note.illegal.meta": "Caractères de contrôle interdits supprimés, ou texte de plus de 32 767 caractères coupé, dans {n} en-têtes, descriptions ou informations.",
- "filter.hidden": "masqué — le filtre porte sur des données personnelles"
+ "filter.hidden": "masqué — le filtre porte sur des données personnelles",
+ "alg.name": "Transmettre les données (XLSX)",
+ "alg.help": "Exporte la couche vers un classeur Excel mis en forme — le même fichier que depuis la fenêtre Data Handover, sans l’ouvrir. Pour le traitement par lot, les modèles et qgis_process.\n\nLes colonnes, en-têtes, unités, descriptions, l’ordre des colonnes, les choix concernant les données personnelles et la colonne clé proviennent des paramètres de la couche enregistrés dans le projet par la fenêtre de l’extension. L’apparence, les feuilles supplémentaires, l’auteur et la langue du fichier proviennent des paramètres enregistrés de la fenêtre ; un jeu de couleurs ou une langue choisis ici sont prioritaires.\n\nPour ajouter la feuille « Modifications », indiquez le fichier précédent. La colonne clé ne sert qu’avec le fichier précédent ; si elle est vide, la clé enregistrée dans la fenêtre est utilisée.",
+ "alg.input": "Couche",
+ "alg.selected": "Entités sélectionnées uniquement",
+ "alg.as_window": "Comme dans la fenêtre de l’extension",
+ "alg.output": "Fichier Excel",
+ "alg.error.no_fields": "Toutes les colonnes de cette couche sont désactivées dans la fenêtre de l’extension. Cochez-y au moins une colonne.",
+ "alg.error.no_selection": "La couche n’a aucune entité sélectionnée."
 }
