@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core:
+    name: Rdzeń (ruff, mypy, pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Linter
+        run: uvx ruff check .
+      - name: Typy (rdzeń)
+        run: uv run --no-project --python 3.12 --with mypy --with openpyxl --with types-openpyxl mypy data_handover/core
+      - name: Testy rdzenia
+        run: uv run --no-project --python 3.12 --with pytest --with openpyxl pytest -q
+
+  qgis:
+    name: QGIS ${{ matrix.qgis }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        qgis: ["3.40", "3.44.15", "4.2.3"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test integracyjny w prawdziwym QGIS
+        run: scripts/qgis-test.sh ${{ matrix.qgis }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zrzuty-qgis-${{ matrix.qgis }}
+          path: build/

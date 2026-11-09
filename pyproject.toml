@@ -1,0 +1,31 @@
+# Konfiguracja narzędzi kontrolnych. Wtyczka nie jest pakietem pip —
+# QGIS ładuje katalog data_handover/ bezpośrednio.
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+extend-exclude = ["EKSPORT_ATR_DO_EXCEL.py", "build"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N"]
+ignore = ["UP007", "UP045", "UP006", "UP035"]
+
+[tool.ruff.lint.per-file-ignores]
+"data_handover/core/i18n.py" = ["E501"]  # zdania tłumaczeń zostają w jednej linii
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["qgis.*"]
+ignore_missing_imports = true
+
+# Moduły na API QGIS nie mają stubów typów; sprawdza je test w prawdziwym QGIS
+# (scripts/qgis-test.sh), nie mypy.
+[[tool.mypy.overrides]]
+module = ["data_handover", "data_handover.plugin", "data_handover.dialog", "data_handover.layer_reader"]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

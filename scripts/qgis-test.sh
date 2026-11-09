@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Test integracyjny wtyczki w prawdziwym QGIS, w obrazie Docker qgis/qgis.
+# Użycie: scripts/qgis-test.sh 3.44.15   (lub 3.40, 4.2.3)
+set -euo pipefail
+TAG="${1:?podaj wersję obrazu qgis/qgis, np. 3.44.15}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+docker run --rm -v "$ROOT:/src" -w /src "qgis/qgis:$TAG" bash -c "
+  set -e
+  status=0
+  # Najpierw bez openpyxl: wtyczka musi się wczytać i pokazać instrukcję instalacji.
+  xvfb-run -a python3 -u tests/qgis_no_openpyxl.py || status=\$?
+  export DEBIAN_FRONTEND=noninteractive; apt-get update -qq >/dev/null && apt-get install -y -qq python3-openpyxl >/dev/null
+  xvfb-run -a python3 -u tests/qgis_smoke.py || status=\$?
+  chmod -R a+rwX build 2>/dev/null || true
+  exit \$status
+"
