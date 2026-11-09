@@ -31,7 +31,9 @@ Detection is a hint, not a guarantee of anonymisation.
 
 Export runs in the background: QGIS stays usable, and the message bar
 shows progress with a **Cancel** button. Cancelling leaves the target
-file as it was.
+file as it was. With very large lookup layers (Value Relation, Relation
+Reference fields) QGIS may pause briefly before the export starts, while
+the labels are loaded.
 
 The **Restore defaults** button at the bottom of the window resets the
 look, the sheets and the file language (column descriptions saved in the
