@@ -191,6 +191,7 @@
  "ui.error.no_key": "Выберите ключевой столбец для сравнения.",
  "ui.error.no_previous": "Укажите предыдущий файл для сравнения.",
  "ui.error.write": "Не удалось сохранить файл:\n{error}",
+ "ui.error.busy": "Другой экспорт ещё выполняется. Дождитесь его завершения или отмените его в панели сообщений.",
  "ui.error.openpyxl": "Не найдена библиотека openpyxl, с помощью которой записываются файлы XLSX.\n\nWindows (OSGeo4W): запустите установщик OSGeo4W и добавьте пакет python3-openpyxl.\nLinux: установите пакет python3-openpyxl.\nmacOS: в консоли Python QGIS выполните: import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "В области {n} объектов, а лист Excel вмещает не более {limit}. Сузьте область (выбор, охват карты, фильтр слоя).",
  "error.not_handover": "Файл «{file}» создан не в Data Handover, поэтому его нельзя сравнить.",

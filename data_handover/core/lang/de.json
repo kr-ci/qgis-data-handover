@@ -191,6 +191,7 @@
  "ui.error.no_key": "Wählen Sie die Schlüsselspalte für den Vergleich.",
  "ui.error.no_previous": "Wählen Sie die vorherige Datei für den Vergleich.",
  "ui.error.write": "Die Datei konnte nicht gespeichert werden:\n{error}",
+ "ui.error.busy": "Ein anderer Export läuft noch. Warten Sie, bis er fertig ist, oder brechen Sie ihn in der Meldungsleiste ab.",
  "ui.error.openpyxl": "Die Bibliothek openpyxl zum Schreiben von XLSX-Dateien fehlt.\n\nWindows (OSGeo4W): Starten Sie den OSGeo4W-Installer und fügen Sie das Paket python3-openpyxl hinzu.\nLinux: Installieren Sie das Paket python3-openpyxl.\nmacOS: Führen Sie in der QGIS-Python-Konsole aus: import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "Der Umfang enthält {n} Objekte, ein Excel-Blatt fasst aber höchstens {limit}. Schränken Sie den Umfang ein (Auswahl, Kartenausschnitt, Layerfilter).",
  "error.not_handover": "Die Datei „{file}“ wurde nicht mit Data Handover erstellt und kann daher nicht verglichen werden.",

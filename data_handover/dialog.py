@@ -10,7 +10,7 @@ import os
 import re
 from typing import Any, Optional
 
-from qgis.core import Qgis, QgsMessageLog, QgsProject, QgsSettings, QgsVectorLayer
+from qgis.core import Qgis, QgsMessageLog, QgsSettings, QgsVectorLayer
 from qgis.gui import QgsColorButton, QgsFieldComboBox, QgsFileWidget, QgsMapLayerComboBox
 from qgis.PyQt.QtCore import Qt, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPixmap
@@ -220,7 +220,8 @@ class HandoverDialog(QDialog):
         self.relaunch = False  # True: wtyczka otworzy okno ponownie w nowym języku
         self.task: Optional[export_task.ExportTask] = None
         self.progress_item: Any = None
-        self.layer_id = ""
+        self.layer_gone = False
+        self.last_result: Optional[xlsx.ExportResult] = None
 
         self.setWindowTitle(self.t("ui.title"))
         self.setMinimumSize(980, 700)
@@ -925,6 +926,9 @@ class HandoverDialog(QDialog):
         if self.layer is None:
             self._warn(self.t("ui.error.no_layer"))
             return
+        if export_task.busy():
+            self._warn(self.t("ui.error.busy"))
+            return
         choices = self.choices()
         if not any(c.export for c in choices):
             self._warn(self.t("ui.error.no_fields"))
@@ -969,7 +973,10 @@ class HandoverDialog(QDialog):
         task = export_task.ExportTask(self.t("ui.exporting", path=os.path.basename(path)), plan, path,
                                       look, sheets, previous)
         task.on_finished = self._finished
-        self.task, self.layer_id = task, self.layer.id()
+        self.task, self.layer_gone = task, False
+        # Usunięta warstwa (także przy otwarciu innego projektu) nie dostaje podstawy
+        # porównania; szukanie po identyfikatorze trafiłoby w nową warstwę o tym samym id.
+        self.layer.willBeDeleted.connect(self._layer_deleted)
         self.progress_item = self._progress(task)
         export_task.start(task)
         self.accept()
@@ -995,6 +1002,9 @@ class HandoverDialog(QDialog):
         bar.pushWidget(item, Qgis.MessageLevel.Info, 0)
         return item
 
+    def _layer_deleted(self) -> None:
+        self.layer_gone = True
+
     def _finished(self, task: export_task.ExportTask) -> None:
         """Koniec zadania (wątek okna): komunikat i podstawa następnego porównania."""
         if self.progress_item is not None:
@@ -1002,9 +1012,8 @@ class HandoverDialog(QDialog):
                 self.iface.messageBar().popWidget(self.progress_item)
         if task.result is not None:
             # Dopiero udany zapis staje się podstawą następnego porównania.
-            layer = QgsProject.instance().mapLayer(self.layer_id)
-            if layer is not None:
-                layer.setCustomProperty(PREVIOUS, task.result.path)
+            if not self.layer_gone and self.layer is not None:
+                self.layer.setCustomProperty(PREVIOUS, task.result.path)
             self.last_result = task.result
             self._report(task.result)
         elif isinstance(task.error, xlsx.PackageError):

@@ -62,7 +62,7 @@ def main() -> None:
     if MODE == "sync":
         pkg = layer_reader.build_package(layer, choices, personal={})
         read = time.perf_counter() - start
-        xlsx.export(path, pkg)
+        rows = xlsx.export(path, pkg).rows
     else:
         from data_handover.export_task import ExportTask
 
@@ -75,7 +75,9 @@ def main() -> None:
             time.sleep(0.005)
         read = task.read_seconds
         assert task.result is not None, task.error
+        rows = task.result.rows
     total = time.perf_counter() - start
+    assert rows == N, f"w pliku {rows} wierszy, oczekiwano {N}"
     app.processEvents()
     ticks.append(time.perf_counter())
     freeze = max(b - a for a, b in zip(ticks, ticks[1:]))

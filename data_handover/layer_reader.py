@@ -146,6 +146,11 @@ def representer(layer: QgsVectorLayer, index: int,
     config = setup.config()
     formatter = QgsApplication.fieldFormatterRegistry().fieldFormatter(setup.type())
     cache = formatter.createCache(layer, index, config)
+    if setup.type() == "RelationReference" and to_python(cache) is None:
+        # Bez pamięci podręcznej (np. relacja wskazuje usuniętą warstwę) formatter
+        # szukałby relacji w projekcie i czytał warstwę powiązaną — w tle to
+        # niebezpieczne. Wynik byłby i tak ten sam: wartość jako tekst.
+        return lambda raw: None if to_python(raw) is None else str(to_python(raw))
     target = layer if target is None else target
 
     def represent(raw: Any) -> Value:

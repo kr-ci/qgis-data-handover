@@ -191,6 +191,7 @@
  "ui.error.no_key": "请选择用于对比的关键列。",
  "ui.error.no_previous": "请选择要对比的上一个文件。",
  "ui.error.write": "无法保存文件：\n{error}",
+ "ui.error.busy": "另一个导出仍在进行。请等待其完成，或在消息栏中取消。",
  "ui.error.openpyxl": "缺少用于写入 XLSX 文件的 openpyxl 库。\n\nWindows (OSGeo4W)：运行 OSGeo4W 安装程序并添加 python3-openpyxl 软件包。\nLinux：安装 python3-openpyxl 软件包。\nmacOS：在 QGIS Python 控制台中运行：import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "该范围有 {n} 个要素，而 Excel 工作表最多容纳 {limit} 行。请缩小范围（选择、地图范围、图层过滤器）。",
  "error.not_handover": "文件“{file}”不是由 Data Handover 创建的，因此无法对比。",

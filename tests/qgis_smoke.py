@@ -130,6 +130,16 @@ def background(small: QgsVectorLayer) -> None:
     check(task.result is None and task.error is None and Path(path).read_bytes() == before
           and sorted(p.name for p in OUT.glob(".~*")) == [], "anulowanie zostawia poprzedni plik bez zmian")
 
+    # Przegląd R5, zarzut 1: relacja bez pamięci podręcznej — w tle bez formattera, wartość jako tekst.
+    broken = QgsVectorLayer("None?field=ref:integer", "relacja", "memory")
+    broken.setEditorWidgetSetup(0, QgsEditorWidgetSetup("RelationReference", {"Relation": "nie_istnieje"}))
+    f = QgsFeature(broken.fields())
+    f.setAttributes([7])
+    broken.dataProvider().addFeatures([f])
+    rel = layer_reader.plan_package(broken, [FieldChoice("ref")], personal={})
+    check(rel.read().rows == [["7"]] and rel.converters[0].__name__ == "<lambda>",  # nie formatter
+          "relacja bez pamięci podręcznej: wartość jako tekst, bez formattera w tle")
+
     # Warstwa usunięta z projektu w trakcie eksportu: zadanie czyta własną kopię źródła.
     QgsProject.instance().addMapLayer(layer)
     task = ExportTask("test", layer_reader.plan_package(layer, choices, personal={}), str(OUT / "usunieta.xlsx"))
@@ -289,6 +299,26 @@ def main() -> None:
     text = bar.createMessage.call_args[0][1]
     level = bar.pushWidget.call_args[0][1]
     check("•" in text and level == Qgis.MessageLevel.Warning, "uwagi z eksportu widoczne w komunikacie")
+
+    # Przegląd R5, zarzut 2: drugi eksport nie startuje, dopóki trwa pierwszy.
+    first = HandoverDialog(iface, None, layer=layer)
+    target["path"] = str(OUT / "pierwszy.xlsx")
+    first.export()
+    second = HandoverDialog(iface, None, layer=layer)
+    busy: list[str] = []
+    second._warn = busy.append  # type: ignore[method-assign]
+    second.export()
+    check(busy == [tr(ui_language(), "ui.error.busy")] and second.task is None, "drugi eksport czeka na pierwszy")
+    wait(first.task)
+
+    # Zarzut 3: warstwa usunięta przed końcem zadania nie dostaje podstawy porównania (i nic się nie sypie).
+    gone = make_layer()
+    box = HandoverDialog(iface, None, layer=gone)
+    target["path"] = str(OUT / "usunieta_z_okna.xlsx")
+    box.export()
+    QgsProject.instance().removeMapLayer(gone.id())
+    wait(box.task)
+    check(box.layer_gone and box.last_result is not None, "warstwa usunięta w trakcie: plik jest, podstawy brak")
 
     background(layer)
 

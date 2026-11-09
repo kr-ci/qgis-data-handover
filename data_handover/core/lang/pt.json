@@ -191,6 +191,7 @@
  "ui.error.no_key": "Escolha a coluna-chave para a comparação.",
  "ui.error.no_previous": "Escolha o ficheiro anterior com que comparar.",
  "ui.error.write": "Não foi possível guardar o ficheiro:\n{error}",
+ "ui.error.busy": "Outra exportação ainda está em andamento. Aguarde a conclusão ou cancele-a na barra de mensagens.",
  "ui.error.openpyxl": "Falta a biblioteca openpyxl, usada para escrever ficheiros XLSX.\n\nWindows (OSGeo4W): execute o instalador do OSGeo4W e adicione o pacote python3-openpyxl.\nLinux: instale o pacote python3-openpyxl.\nmacOS: na consola Python do QGIS execute: import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "O âmbito tem {n} feições, mas uma folha do Excel comporta no máximo {limit}. Reduza o âmbito (seleção, extensão do mapa, filtro da camada).",
  "error.not_handover": "O ficheiro “{file}” não foi criado pelo Data Handover, por isso não pode ser comparado.",

@@ -58,6 +58,11 @@ class ExportTask(QgsTask):
             self.on_finished(self)
 
 
+def busy() -> bool:
+    """Trwa eksport. Drugi naraz mógłby skończyć się wcześniej i zostać nadpisany starszym."""
+    return bool(_RUNNING)
+
+
 def start(task: ExportTask) -> None:
     _RUNNING.add(task)
     QgsApplication.taskManager().addTask(task)

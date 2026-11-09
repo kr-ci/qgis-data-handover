@@ -191,6 +191,7 @@
  "ui.error.no_key": "比較に使うキー列を選択してください。",
  "ui.error.no_previous": "比較する前回のファイルを選択してください。",
  "ui.error.write": "ファイルを保存できませんでした:\n{error}",
+ "ui.error.busy": "別のエクスポートがまだ実行中です。終了を待つか、メッセージバーでキャンセルしてください。",
  "ui.error.openpyxl": "XLSX ファイルの書き込みに使用する openpyxl ライブラリが見つかりません。\n\nWindows (OSGeo4W): OSGeo4W インストーラを実行し、python3-openpyxl パッケージを追加してください。\nLinux: python3-openpyxl パッケージをインストールしてください。\nmacOS: QGIS の Python コンソールで次を実行してください: import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "範囲に {n} 件の地物がありますが、Excel のシートに入るのは最大 {limit} 件です。範囲 (選択、地図の表示範囲、レイヤのフィルタ) を絞り込んでください。",
  "error.not_handover": "ファイル「{file}」は Data Handover で作成されたものではないため、比較できません。",

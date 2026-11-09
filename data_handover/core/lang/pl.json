@@ -191,6 +191,7 @@
  "ui.error.no_key": "Wybierz kolumnę-klucz do porównania.",
  "ui.error.no_previous": "Wskaż poprzedni plik do porównania.",
  "ui.error.write": "Nie udało się zapisać pliku:\n{error}",
+ "ui.error.busy": "Trwa inny eksport. Poczekaj, aż się skończy, albo anuluj go w pasku komunikatów.",
  "ui.error.openpyxl": "Brakuje biblioteki openpyxl, z której wtyczka zapisuje pliki XLSX.\n\nWindows (OSGeo4W): uruchom instalator OSGeo4W i dodaj pakiet python3-openpyxl.\nLinux: zainstaluj pakiet python3-openpyxl.\nmacOS: w konsoli Pythona QGIS wpisz: import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "Zakres ma {n} obiektów, a arkusz Excela mieści najwyżej {limit}. Zawęź zakres (zaznaczenie, zasięg mapy, filtr warstwy).",
  "error.not_handover": "Plik „{file}” nie pochodzi z Data Handover, więc nie da się go porównać.",
