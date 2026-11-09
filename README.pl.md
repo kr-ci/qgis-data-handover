@@ -27,7 +27,9 @@ nagłówkami i etykietami zamiast kodów.
 Pola wyglądające na dane osobowe (nazwa pola albo wartości: PESEL z sumą
 kontrolną, e-mail, telefon, numer księgi wieczystej) są domyślnie
 odznaczone; można je zamaskować albo świadomie wyeksportować. Wykrywanie to
-podpowiedź, nie gwarancja anonimizacji.
+podpowiedź, nie gwarancja anonimizacji. Decyzja zapisana w projekcie
+(maskować albo eksportować jawnie) obowiązuje także wtedy, gdy późniejsza,
+mniejsza próbka nie wykrywa już pola.
 
 Eksport działa w tle: z QGIS można dalej korzystać, a pasek komunikatów
 pokazuje postęp z przyciskiem **Anuluj**. Anulowanie zostawia plik

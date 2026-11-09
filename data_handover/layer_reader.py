@@ -20,7 +20,7 @@ from qgis.core import (
     QgsVectorLayer,
     QgsVectorLayerFeatureSource,
 )
-from qgis.PyQt.QtCore import QDate, QDateTime, QTime
+from qgis.PyQt.QtCore import QDate, QDateTime, QMetaType, QTime
 
 from .core import privacy
 from .core.i18n import tr
@@ -35,6 +35,7 @@ _REPRESENTED_WIDGETS = {"ValueMap", "ValueRelation", "RelationReference", "Check
 _ID_TOKENS = {"id", "fid", "gid", "ogc", "nr", "numer", "kod", "code", "teryt", "objectid", "idx"}
 _VALUE_MAP_NULL = "{2839923C-8B7D-419E-B84B-CA2FE9B80EC7}"
 PROPERTY = "data_handover/fields"
+SAVED_PROTECTION = "zapisana decyzja o ochronie"  # powód w dymku okna, obok „nazwa: …”, „wartości: …”
 SAMPLE = 200
 
 
@@ -154,10 +155,18 @@ def fields_only(layer: QgsVectorLayer) -> QgsVectorLayer:
     usunąć z projektu — wywołanie na usuniętej warstwie wysypałoby QGIS.
     """
     copy = QgsVectorLayer("None", "fields", "memory")
-    copy.dataProvider().addAttributes(layer.fields().toList())
+    provider = copy.dataProvider()
+    for field in layer.fields():
+        before = provider.fields().count()
+        provider.addAttributes([QgsField(field)])
+        if provider.fields().count() == before:
+            # Typu nieznanego warstwie w pamięci nie wolno pominąć — przesunąłby numery
+            # pól; tekst zachowuje numer, a takie pole i tak nie ma etykiet z widżetu.
+            provider.addAttributes([QgsField(field.name(), QMetaType.Type.QString)])
     copy.updateFields()
-    # Typ pola, którego warstwa w pamięci nie zna, przesunąłby numery pól.
-    return copy if copy.fields().names() == layer.fields().names() else layer
+    if copy.fields().names() != layer.fields().names():
+        raise RuntimeError(f"Nie udało się skopiować pól warstwy: {layer.fields().names()}")
+    return copy
 
 
 def representer(layer: QgsVectorLayer, index: int,
@@ -200,11 +209,23 @@ def sample_values(layer: QgsVectorLayer, limit: int = SAMPLE, represented: bool 
     return samples
 
 
-def personal_data(layer: QgsVectorLayer) -> dict[str, str]:
-    """{nazwa pola: powód} dla pól, które wyglądają na dane osobowe."""
-    fields = [(f.name(), layer.attributeDisplayName(i)) for i, f in enumerate(layer.fields())]
-    # Próbki z etykietami (jak w oknie), żeby okno i algorytm Processing oceniły pola tak samo.
-    return {f.field: f.reason for f in privacy.detect(fields, sample_values(layer, represented=True))}
+def personal_data(layer: QgsVectorLayer, samples: Optional[dict[str, list[Value]]] = None) -> dict[str, str]:
+    """{nazwa pola: powód} dla pól z danymi osobowymi — wykrytych albo już chronionych.
+
+    Próbki z etykietami (jak w oknie), żeby okno i algorytm Processing oceniły
+    pola tak samo. Pole z zapisaną decyzją o ochronie zostaje osobowe, choćby
+    dzisiejsza próbka go nie wykryła (np. filtr zostawił mniej niż trzy wartości):
+    inaczej zapisane maskowanie przestałoby działać bez ostrzeżenia.
+    """
+    names = layer.fields().names()
+    fields = [(name, layer.attributeDisplayName(i)) for i, name in enumerate(names)]
+    samples = sample_values(layer, represented=True) if samples is None else samples
+    found = {f.field: f.reason for f in privacy.detect(fields, samples)}
+    stored = load_choices(layer).get("fields", {})
+    for name, info in (stored.items() if isinstance(stored, dict) else []):
+        if name in names and isinstance(info, dict) and info.get("protect") in ("mask", "keep"):
+            found.setdefault(name, SAVED_PROTECTION)
+    return found
 
 
 def describe(layer: QgsVectorLayer, index: int, choice: FieldChoice) -> Column:

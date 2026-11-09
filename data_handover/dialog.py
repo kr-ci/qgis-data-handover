@@ -695,8 +695,7 @@ class HandoverDialog(QDialog):
             self._update_scope_labels()
             return
         self.samples = layer_reader.sample_values(self.layer, 200, represented=True)
-        fields = [(f.name(), self.layer.attributeDisplayName(i)) for i, f in enumerate(self.layer.fields())]
-        self.personal = {f.field: f.reason for f in privacy.detect(fields, self.samples)}
+        self.personal = layer_reader.personal_data(self.layer, self.samples)
         saved = layer_reader.load_choices(self.layer)
         stored = saved.get("fields", {})
         names = self.layer.fields().names()

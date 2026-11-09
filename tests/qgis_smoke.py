@@ -12,7 +12,6 @@ import datetime as dt
 import glob
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -66,7 +65,7 @@ OUT = Path(tempfile.mkdtemp())
 def make_layer() -> QgsVectorLayer:
     uri = ("Point?crs=EPSG:2180&field=fid:integer&field=nr_dz:string&field=teryt:string"
            "&field=pow_m2:double(12,2)&field=przezn:string&field=data_akt:date"
-           "&field=nazwisko:string&field=nr_ident:string")
+           "&field=nazwisko:string&field=nr_ident:string&field=uwagi:string")
     layer = QgsVectorLayer(uri, "dzialki_planowane", "memory")
     assert layer.isValid()
     layer.setFieldAlias(layer.fields().indexOf("nr_dz"), "Nr działki")
@@ -75,14 +74,15 @@ def make_layer() -> QgsVectorLayer:
     value_map = {"map": [{"zabudowa mieszkaniowa jednorodzinna": "MN"}, {"usługi": "U"}, {"lasy": "ZL"}]}
     layer.setEditorWidgetSetup(layer.fields().indexOf("przezn"), QgsEditorWidgetSetup("ValueMap", value_map))
     rows = [
-        (1, "12/3", "0214011", 1523.456, "MN", QDate(2024, 5, 3), "Jan Kowalski", "44051401359", (100, 100)),
-        (2, "12/4", "0214011", 980.1, "U", None, "Anna Nowak", "02070803628", (200, 200)),
-        (3, "15/1", "0214012", None, "ZL", QDate(2023, 1, 9), None, "90090515836", (5000, 5000)),
+        (1, "12/3", "0214011", 1523.456, "MN", QDate(2024, 5, 3), "Jan Kowalski", "44051401359",
+         "oględziny 2024-05-03 10:00", (100, 100)),
+        (2, "12/4", "0214011", 980.1, "U", None, "Anna Nowak", "02070803628", None, (200, 200)),
+        (3, "15/1", "0214012", None, "ZL", QDate(2023, 1, 9), None, "90090515836", "03.02.2023 08:15", (5000, 5000)),
     ]
     features = []
-    for fid, nr, teryt, area, code, date, name, ident, (x, y) in rows:
+    for fid, nr, teryt, area, code, date, name, ident, note, (x, y) in rows:
         f = QgsFeature(layer.fields())
-        f.setAttributes([fid, nr, teryt, area, code, date, name, ident])
+        f.setAttributes([fid, nr, teryt, area, code, date, name, ident, note])
         f.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(x, y)))
         features.append(f)
     assert layer.dataProvider().addFeatures(features)[0]
@@ -151,6 +151,28 @@ def background(small: QgsVectorLayer) -> None:
     check(rel.read().rows == [["7"]] and rel.converters[0].__name__ == "<lambda>",  # nie formatter
           "relacja bez pamięci podręcznej: wartość jako tekst, bez formattera w tle")
 
+    # Przegląd R6, zarzut 2: pole typu, którego warstwa w pamięci nie zna, nie może sprawić,
+    # że formatter w tle dostanie oryginalną warstwę zamiast kopii pól.
+    from qgis.core import QgsField, QgsFields
+    from qgis.PyQt.QtCore import QMetaType
+
+    odd = QgsFields()
+    for field in (QgsField("a", QMetaType.Type.Int), QgsField("znak", QMetaType.Type.QChar),
+                  QgsField("b", QMetaType.Type.QString)):
+        odd.append(field)
+    naive = QgsVectorLayer("None", "proba", "memory")
+    naive.dataProvider().addAttributes(odd.toList())
+    naive.updateFields()
+
+    class OddLayer:
+        def fields(self) -> QgsFields:
+            return odd
+
+    copy = layer_reader.fields_only(OddLayer())  # type: ignore[arg-type]
+    check(naive.fields().names() == ["a", "b"] and isinstance(copy, QgsVectorLayer)
+          and copy.fields().names() == ["a", "znak", "b"],
+          "pole nieznanego typu: kopia pól zachowuje numery, bez oryginału w tle")
+
     # Warstwa usunięta z projektu w trakcie eksportu: zadanie czyta własną kopię źródła.
     QgsProject.instance().addMapLayer(layer)
     task = ExportTask("test", layer_reader.plan_package(layer, choices, personal={}), str(OUT / "usunieta.xlsx"))
@@ -163,24 +185,39 @@ def background(small: QgsVectorLayer) -> None:
           "etykieta value map z zadania w tle")
 
 
-# Data eksportu (podpis nad tabelą, „Metryka”, arkusz techniczny) różni się między dwoma plikami.
-STAMP = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?|\d{2}[./]\d{2}[./]\d{4},? \d{2}:\d{2}(:\d{2})?")
-
-
 def workbook_cells(path: str) -> dict[str, object]:
-    """Treść i wygląd wszystkich arkuszy — do porównania dwóch plików (bez daty eksportu)."""
+    """Treść i wygląd wszystkich arkuszy — do porównania dwóch plików.
+
+    Różni się tylko data eksportu: zastępujemy dokładnie ją (odczytaną z arkusza
+    technicznego tego pliku), nie każdy tekst wyglądający na datę.
+    """
+    from data_handover.core.xlsx import META_SHEET, display
+
     wb = load_workbook(path)
+    meta = {str(row[0]): row[1] for row in wb[META_SHEET].iter_rows(values_only=True)}
+    stamp = dt.datetime.fromisoformat(str(meta["exported_at"]))
+    shown = display(stamp, None, str(meta["language"]))
     sheets: dict[str, object] = {}
     for ws in wb.worksheets:
         cells = []
         for row in ws.iter_rows():
             for c in row:
-                value = STAMP.sub("<data>", c.value) if isinstance(c.value, str) else c.value
+                value = c.value
+                if isinstance(value, str):
+                    value = value.replace(stamp.isoformat(), "<data>").replace(shown, "<data>")
                 color = c.font.color.rgb if c.font.color is not None else None
-                cells.append((c.coordinate, value, c.number_format, c.font.name, c.font.sz, c.font.b, color,
-                              c.fill.fgColor.rgb, repr(c.border), c.alignment.horizontal))
-        rules = [(str(cf.sqref), r.formula) for cf in ws.conditional_formatting for r in cf.rules]
-        sheets[ws.title] = (ws.sheet_state, cells, sorted(ws.tables), ws.freeze_panes, rules,
+                cells.append((c.coordinate, value, c.number_format, c.font.name, c.font.sz, c.font.b, c.font.i,
+                              c.font.u, color, c.fill.fgColor.rgb, repr(c.border), c.alignment.horizontal,
+                              c.alignment.vertical, c.alignment.wrap_text,
+                              c.comment.text if c.comment is not None else None))
+        rules = [(str(cf.sqref), r.type, r.formula, repr(r.dxf)) for cf in ws.conditional_formatting for r in cf.rules]
+        widths = {k: d.width for k, d in ws.column_dimensions.items()}
+        page = (ws.page_setup.orientation, ws.page_setup.fitToWidth, ws.sheet_properties.pageSetUpPr.fitToPage
+                if ws.sheet_properties.pageSetUpPr else None, ws.print_title_rows, ws.oddFooter.center.text,
+                ws.oddHeader.center.text, ws.sheet_view.showGridLines)
+        tables = sorted((t.name, t.ref, repr(t.tableStyleInfo)) for t in ws.tables.values())
+        sheets[ws.title] = (ws.sheet_state, cells, tables, ws.freeze_panes, rules, widths, page,
+                            sorted(str(m) for m in ws.merged_cells.ranges), ws.auto_filter.ref,
                             ws.sheet_properties.tabColor.rgb if ws.sheet_properties.tabColor else None)
     return sheets
 
@@ -206,12 +243,16 @@ def gpkg_layer(name: str) -> QgsVectorLayer:
     return layer
 
 
-def window_export(iface: object, layer: QgsVectorLayer, path: str) -> None:
-    """Eksport z okna z zapisanymi ustawieniami (okno dostaje ścieżkę zamiast okna zapisu)."""
+def window_export(iface: object, layer: QgsVectorLayer, path: str, previous: str = "") -> None:
+    """Eksport z okna z zapisanymi ustawieniami (okno dostaje ścieżkę zamiast okna zapisu).
+
+    Bez `previous` — bez arkusza „Zmiany”; z nim okno porównuje z tym plikiem
+    według klucza zapisanego przy warstwie.
+    """
     import data_handover.dialog as dialog_module
 
     dialog_module.QFileDialog.getSaveFileName = lambda *args, **kwargs: (path, "")
-    layer.setCustomProperty(dialog_module.PREVIOUS, "")  # bez arkusza „Zmiany”
+    layer.setCustomProperty(dialog_module.PREVIOUS, previous)
     box = HandoverDialog(iface, None, layer=layer)
     box.export()
     wait(box.task)
@@ -284,9 +325,19 @@ def processing_algorithm(iface: object) -> None:
     check(header.fill.fgColor.rgb.endswith(THEMES["plum"].header_fill) and header.font.name == look.header.font,
           "motyw zmienia kolory zapisanego wyglądu, układ zostaje")
 
+    # Ta sama podstawa porównania w oknie i w algorytmie; zmiana jednej wartości po pierwszym eksporcie.
+    layer.startEditing()
+    first = next(layer.getFeatures())
+    layer.changeAttributeValue(first.id(), layer.fields().indexOf("pow_m2"), 1600.0)
+    layer.commitChanges()
+    compared_window = str(OUT / "r6_zmiany_okno.xlsx")
+    window_export(iface, layer, compared_window, previous=from_window)
     compared = str(OUT / "r6_zmiany.xlsx")
     processing.run("dataHandover:package", {"INPUT": layer, "PREVIOUS": from_window, "OUTPUT": compared})
-    check("Zmiany" in load_workbook(compared).sheetnames, "poprzedni plik bez klucza: klucz zapisany w oknie")
+    changes = load_workbook(compared)["Zmiany"]
+    check(workbook_cells(compared) == workbook_cells(compared_window)
+          and any(c.value == "12/3" for row in changes.iter_rows() for c in row),
+          "poprzedni plik bez klucza: klucz zapisany w oknie, arkusz „Zmiany” jak z okna")
     layer_reader.save_choices(layer, choices, None)
     class Errors(QgsProcessingFeedback):
         """Komunikaty błędów, które użytkownik widzi w oknie algorytmu."""
@@ -316,6 +367,17 @@ def processing_algorithm(iface: object) -> None:
     check(load_workbook(selected)["Dane"].max_row == HEADER_ROW + 1, "tylko zaznaczone")
     layer.removeSelection()
     layer_reader.save_choices(layer, choices, "nr_dz")
+
+    # Przegląd R6, zarzut 1: po zawężeniu filtra do dwóch obiektów PESEL-e nie są już wykrywane
+    # po wartościach (za mała próbka), a zapisane maskowanie nadal obowiązuje — w oknie i w algorytmie.
+    layer.setSubsetString('"fid" <= 2')
+    narrowed = layer_reader.personal_data(layer)
+    masked = str(OUT / "r6_mala_probka.xlsx")
+    processing.run("dataHandover:package", {"INPUT": layer, "OUTPUT": masked})
+    values = [c.value for row in load_workbook(masked)["Dane"].iter_rows(min_row=HEADER_ROW + 1) for c in row]
+    check("nr_ident" in narrowed and "44051401359" not in values and "***" in values,
+          "zapisane maskowanie obowiązuje, choć mała próbka nie wykrywa pola")
+    layer.setSubsetString("")
     qgis_process(iface, layer, settings)
     for key in settings:
         QgsSettings().remove("data_handover/" + key)
@@ -378,8 +440,13 @@ def qgis_process(iface: object, layer: QgsVectorLayer, settings: dict[str, str])
     """Kryterium R6: `qgis_process run dataHandover:package` daje ten sam plik co okno."""
     project = str(OUT / "r6.qgz")
     check(QgsProject.instance().write(project), "projekt z ustawieniami pól zapisany")
-    env = dict(os.environ, QGIS_PLUGINPATH=str(ROOT), QT_QPA_PLATFORM="offscreen")
-    env.pop("QGIS_CUSTOM_CONFIG_PATH", None)  # profil jak u użytkownika, nie testowy
+    # Jednorazowy katalog domowy: test nie może zmienić prawdziwego profilu QGIS,
+    # nawet uruchomiony poza kontenerem.
+    home = OUT / "home"
+    home.mkdir(exist_ok=True)
+    env = dict(os.environ, QGIS_PLUGINPATH=str(ROOT), QT_QPA_PLATFORM="offscreen", HOME=str(home))
+    for name in ("QGIS_CUSTOM_CONFIG_PATH", "XDG_DATA_HOME", "XDG_CONFIG_HOME"):
+        env.pop(name, None)
 
     def run(*args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(["qgis_process", *args], env=env, capture_output=True, text=True, timeout=180)
@@ -388,7 +455,7 @@ def qgis_process(iface: object, layer: QgsVectorLayer, settings: dict[str, str])
     assert enabled.returncode == 0, enabled.stdout + enabled.stderr
     # W prawdziwej instalacji okno i qgis_process czytają ten sam profil — test ma osobny,
     # więc ustawienia okna kopiujemy do pliku ustawień qgis_process.
-    inis = [p for p in glob.glob(os.path.expanduser("~/.local/share/QGIS/*/profiles/default/QGIS/*.ini"))
+    inis = [p for p in glob.glob(str(home / ".local/share/QGIS/*/profiles/default/QGIS/*.ini"))
             if "data_handover=true" in Path(p).read_text(errors="replace")]
     assert len(inis) == 1, inis
     ini = QSettings(inis[0], QSettings.Format.IniFormat)

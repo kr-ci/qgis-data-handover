@@ -27,7 +27,9 @@ headers and labels instead of codes.
 Fields that look like personal data (by field name or by values: Polish
 PESEL with a valid checksum, e-mail, phone number, land register number)
 are unchecked by default; you can mask them or export them on purpose.
-Detection is a hint, not a guarantee of anonymisation.
+Detection is a hint, not a guarantee of anonymisation. A decision saved in
+the project (mask or export as is) stays in force even when a later, smaller
+sample no longer reveals the field.
 
 Export runs in the background: QGIS stays usable, and the message bar
 shows progress with a **Cancel** button. Cancelling leaves the target
