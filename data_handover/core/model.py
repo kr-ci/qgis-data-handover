@@ -8,7 +8,7 @@ from typing import Any, Optional, Union
 
 Value = Union[None, str, int, float, bool, dt.date, dt.datetime, dt.time]
 
-KINDS = ("text", "integer", "decimal", "date", "datetime", "time", "boolean")
+KINDS = ("text", "integer", "decimal", "date", "datetime", "time", "boolean", "link")
 
 # Arkusz Excela ma 1 048 576 wierszy; odejmujemy wiersze tytułu i nagłówka.
 # Bez tytułu nad tabelą nagłówek trafia do wiersza 1 (`Look.header_row`).
@@ -152,6 +152,54 @@ class Sheets:
     dictionary_items: tuple[str, ...] = DICTIONARY_ITEMS
     about: bool = False
     about_items: tuple[str, ...] = ABOUT_ITEMS
+
+
+# --------------------------------------------------------------------------
+# Kolumny liczone z geometrii
+# --------------------------------------------------------------------------
+
+GEO_PREFIX = "@"  # nazwy kolumn z geometrii („@area_ha”) — nie są polami warstwy
+AREA_UNITS = ("ha", "m2")
+LENGTH_UNITS = ("m", "km")
+MAP_SERVICES = ("osm", "geoportal")
+
+
+@dataclass
+class GeoColumns:
+    """Kolumny z geometrii dopisywane na końcu arkusza „Dane” (ustawienia warstwy).
+
+    `measure` to powierzchnia na warstwie poligonowej, a długość na liniowej.
+    """
+
+    measure: bool = False
+    area_unit: str = "ha"
+    length_unit: str = "m"
+    xy: bool = False
+    wgs84: bool = False
+    link: bool = False
+    map: str = "osm"
+
+    def __post_init__(self) -> None:
+        # Zapisane ustawienia mogą być uszkodzone albo ze starszej wersji: nieznana wartość = domyślna.
+        if self.area_unit not in AREA_UNITS:
+            self.area_unit = "ha"
+        if self.length_unit not in LENGTH_UNITS:
+            self.length_unit = "m"
+        if self.map not in MAP_SERVICES:
+            self.map = "osm"
+
+    @property
+    def any(self) -> bool:
+        return self.measure or self.xy or self.wgs84 or self.link
+
+
+def map_url(service: str, lat: float, lon: float) -> str:
+    """Adres mapy w punkcie WGS84. Parametr `mapview` Geoportalu nie jest opisany w dokumentacji
+    (Geoportal sam ustawia go w adresie) — sprawdzony 2026-11-10."""
+    la, lo = f"{lat:.6f}", f"{lon:.6f}"
+    if service == "geoportal":
+        return f"https://mapy.geoportal.gov.pl/imapnext/imap/?mapview={la},{lo},1000s"
+    return f"https://www.openstreetmap.org/?mlat={la}&mlon={lo}#map=18/{la}/{lo}"
 
 
 def look_with_theme(look: Look, theme: Theme) -> Look:

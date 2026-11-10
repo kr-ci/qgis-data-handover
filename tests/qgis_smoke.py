@@ -48,7 +48,16 @@ from openpyxl import load_workbook  # noqa: E402
 
 from data_handover import classFactory, layer_reader  # noqa: E402
 from data_handover.core.i18n import LANGUAGES, tr  # noqa: E402
-from data_handover.core.model import HEADER_ROW, THEMES, Look, Sheets, look_with_theme, to_dict  # noqa: E402
+from data_handover.core.model import (  # noqa: E402
+    HEADER_ROW,
+    THEMES,
+    GeoColumns,
+    Look,
+    Sheets,
+    look_with_theme,
+    map_url,
+    to_dict,
+)
 from data_handover.core.xlsx import export  # noqa: E402
 from data_handover.dialog import HandoverDialog  # noqa: E402
 from data_handover.export_task import ExportTask  # noqa: E402
@@ -209,7 +218,8 @@ def workbook_cells(path: str) -> dict[str, object]:
                 cells.append((c.coordinate, value, c.number_format, c.font.name, c.font.sz, c.font.b, c.font.i,
                               c.font.u, color, c.fill.fgColor.rgb, repr(c.border), c.alignment.horizontal,
                               c.alignment.vertical, c.alignment.wrap_text,
-                              c.comment.text if c.comment is not None else None))
+                              c.comment.text if c.comment is not None else None,
+                              c.hyperlink.target if c.hyperlink is not None else None))
         rules = [(str(cf.sqref), r.type, r.formula, repr(r.dxf)) for cf in ws.conditional_formatting for r in cf.rules]
         widths = {k: d.width for k, d in ws.column_dimensions.items()}
         page = (ws.page_setup.orientation, ws.page_setup.fitToWidth, ws.sheet_properties.pageSetUpPr.fitToPage
@@ -278,7 +288,8 @@ def processing_algorithm(iface: object) -> None:
             c.header, c.unit, c.description = "Pow. [m²]", "m²", "Powierzchnia z ewidencji"
         if c.name == "nr_ident":
             c.protect = "mask"
-    layer_reader.save_choices(layer, choices, "nr_dz")
+    # R7: kolumny z geometrii zapisane przy warstwie — algorytm liczy je tak samo jak okno.
+    layer_reader.save_choices(layer, choices, "nr_dz", GeoColumns(xy=True, wgs84=True, link=True, map="geoportal"))
     look = look_with_theme(Look(as_table=False), THEMES["forest"])
     settings = {"look": json.dumps(to_dict(look)),
                 "sheets": json.dumps(to_dict(Sheets(dictionary=True, about=True))),
@@ -292,6 +303,8 @@ def processing_algorithm(iface: object) -> None:
     result = processing.run("dataHandover:package", {"INPUT": layer, "OUTPUT": from_alg})
     check(result["OUTPUT"] == from_alg and workbook_cells(from_alg) == workbook_cells(from_window),
           "processing.run: plik identyczny z eksportem z okna (arkusze, wartości, wygląd)")
+    meta = [r[1] for r in load_workbook(from_alg)["_handover"].iter_rows(values_only=True) if r[0] == "column"]
+    check(meta[-5:] == ["@x", "@y", "@lat", "@lon", "@link"], f"algorytm: kolumny geometrii z ustawień warstwy {meta}")
     data = load_workbook(from_alg)["Dane"]
     check(load_workbook(from_alg).sheetnames[:3] == ["Dane", "Słownik", "Metryka"] and not data.tables
           and data.cell(row=HEADER_ROW, column=1).fill.fgColor.rgb.endswith(THEMES["forest"].header_fill)
@@ -474,6 +487,158 @@ def qgis_process(iface: object, layer: QgsVectorLayer, settings: dict[str, str])
           "qgis_process: plik identyczny z eksportem z okna")
 
 
+PARCEL = ("POLYGON((500000 480000, 500120 480000, 500120 480050, 500040 480050, 500040 480130, "
+          "500000 480130, 500000 480000))")
+
+
+def geo_layer(wkt_type: str, crs: str, geometries: list[str | None]) -> QgsVectorLayer:
+    layer = QgsVectorLayer(f"{wkt_type}?crs={crs}&field=nr_dz:string", f"geo_{wkt_type}", "memory")
+    features = []
+    for i, wkt in enumerate(geometries, start=1):
+        f = QgsFeature(layer.fields())
+        f.setAttributes([f"{i}/1"])
+        if wkt is not None:
+            f.setGeometry(QgsGeometry.fromWkt(wkt))
+        features.append(f)
+    assert layer.dataProvider().addFeatures(features)[0]
+    QgsProject.instance().addMapLayer(layer)
+    return layer
+
+
+def qgis_measure(layer: QgsVectorLayer, expression: str) -> float:
+    """Wartość `$area`/`$length` tak, jak liczy ją kalkulator pól QGIS (elipsoida i jednostki projektu)."""
+    from qgis.core import QgsDistanceArea, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils
+
+    project = QgsProject.instance()
+    calc = QgsDistanceArea()
+    calc.setSourceCrs(layer.crs(), project.transformContext())
+    calc.setEllipsoid(project.ellipsoid())
+    exp = QgsExpression(expression)
+    exp.setGeomCalculator(calc)
+    exp.setDistanceUnits(project.distanceUnits())
+    exp.setAreaUnits(project.areaUnits())
+    context = QgsExpressionContext(QgsExpressionContextUtils.globalProjectLayerScopes(layer))
+    context.setFeature(next(layer.getFeatures()))
+    return float(exp.evaluate(context))
+
+
+def geometry() -> None:
+    """R7: kolumny z geometrii — zgodność z $area/$length, punkt wewnętrzny, WGS84, link, zapis ustawień."""
+    from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform
+
+    project = QgsProject.instance()
+    project.setCrs(QgsCoordinateReferenceSystem("EPSG:2180"))  # bez CRS projekt zgłasza elipsoidę „NONE”
+    project.setEllipsoid("EPSG:7019")  # GRS 1980
+    check(project.ellipsoid() == "EPSG:7019", "projekt testowy z elipsoidą GRS 1980")
+    layer = geo_layer("Polygon", "EPSG:2180", [PARCEL, None])
+    check(layer_reader.geometry_kind(layer) == "polygon", "typ geometrii: poligon")
+    all_on = GeoColumns(measure=True, area_unit="m2", xy=True, wgs84=True, link=True, map="geoportal")
+    pkg = layer_reader.build_package(layer, [FieldChoice("nr_dz")], geo=all_on, ellipsoid=project.ellipsoid(),
+                                     personal={}, language="pl")
+    names = [c.name for c in pkg.columns]
+    check(names == ["nr_dz", "@area_m2", "@x", "@y", "@lat", "@lon", "@link"], f"kolumny geometrii: {names}")
+    row = dict(zip(names, pkg.rows[0]))
+    expected = qgis_measure(layer, "$area")
+    check(abs(row["@area_m2"] - expected) <= 0.01, f"powierzchnia {row['@area_m2']} = $area {expected:.4f} (±0,01 m²)")
+    planar = QgsGeometry.fromWkt(PARCEL).area()
+    check(abs(row["@area_m2"] / planar - 1) < 0.003 and row["@area_m2"] != round(planar, 2),
+          "powierzchnia elipsoidalna bliska płaskiej w EPSG:2180, ale nie płaska")
+    inside = QgsGeometry.fromPointXY(QgsPointXY(row["@x"], row["@y"]))
+    check(QgsGeometry.fromWkt(PARCEL).contains(inside), "punkt wewnętrzny leży w działce w kształcie „L”")
+    to_wgs = QgsCoordinateTransform(layer.crs(), QgsCoordinateReferenceSystem("EPSG:4326"), project)
+    wgs = to_wgs.transform(QgsPointXY(row["@x"], row["@y"]))
+    check(abs(row["@lat"] - wgs.y()) < 2e-6 and abs(row["@lon"] - wgs.x()) < 2e-6, "szerokość i długość WGS84")
+    check(row["@link"] == map_url("geoportal", row["@lat"], row["@lon"]), "link do Geoportalu")
+    check(all(v is None for v in pkg.rows[1][1:]), "obiekt bez geometrii: puste komórki")
+    area = {c.name: c for c in pkg.columns}["@area_m2"]
+    check("EPSG:2180" in area.description and "ewidencyjn" in area.description and area.unit == "m²",
+          f"opis metody: {area.description}")
+
+    ha = layer_reader.build_package(layer, [FieldChoice("nr_dz")], geo=GeoColumns(measure=True),
+                                    ellipsoid=project.ellipsoid(), personal={})
+    check(ha.rows[0][1] == round(row["@area_m2"] / 10_000, 4) and ha.columns[1].unit == "ha", "powierzchnia w ha")
+
+    line = geo_layer("LineString", "EPSG:2180", ["LINESTRING(500000 480000, 500300 480400, 501000 480400)"])
+    lpkg = layer_reader.build_package(line, [FieldChoice("nr_dz")], geo=GeoColumns(measure=True, length_unit="km"),
+                                      ellipsoid=project.ellipsoid(), personal={})
+    check(lpkg.columns[1].name == "@length_km"
+          and abs(lpkg.rows[0][1] - round(qgis_measure(line, "$length") / 1000, 3)) < 1e-9, "długość linii = $length")
+
+    # Projekt bez elipsoidy, warstwa w stopniach: elipsoida układu warstwy, nie stopnie kwadratowe.
+    project.setEllipsoid("NONE")
+    degrees = geo_layer("Polygon", "EPSG:4326", ["POLYGON((21 52, 21.001 52, 21.001 52.001, 21 52.001, 21 52))"])
+    dpkg = layer_reader.build_package(degrees, [FieldChoice("nr_dz")], geo=GeoColumns(measure=True, area_unit="m2"),
+                                      ellipsoid=project.ellipsoid(), personal={})
+    check(7_000 < dpkg.rows[0][1] < 8_000 and "WGS" in dpkg.columns[1].description,
+          f"bez elipsoidy projektu: elipsoida układu ({dpkg.rows[0][1]} m²)")
+    project.setEllipsoid("EPSG:7019")
+
+    table = QgsVectorLayer("None?field=nr_dz:string", "tabela", "memory")
+    tpkg = layer_reader.build_package(table, [FieldChoice("nr_dz")], geo=all_on, personal={})
+    check(layer_reader.geometry_kind(table) == "none" and [c.name for c in tpkg.columns] == ["nr_dz"],
+          "warstwa bez geometrii: bez kolumn geometrii")
+
+    # Ustawienia geometrii zapisane przy warstwie; zapis samych pól ich nie kasuje.
+    layer_reader.save_choices(layer, [FieldChoice("nr_dz")], None, all_on)
+    layer_reader.save_choices(layer, [FieldChoice("nr_dz", header="Nr")], None)
+    choices, _, geo = layer_reader.saved_choices(layer, {})
+    check(geo == all_on and choices[0].header == "Nr", "ustawienia geometrii przy warstwie przeżywają zapis pól")
+
+    # W tle (QgsTask) te same wartości co w wątku okna.
+    path = str(OUT / "r7_geometria.xlsx")
+    task = ExportTask("geo", layer_reader.plan_package(layer, [FieldChoice("nr_dz")], geo=all_on,
+                                                       ellipsoid=project.ellipsoid(), personal={},
+                                                       language="pl"), path)
+    start_task(task)
+    wait(task)
+    data = load_workbook(path)["Dane"]
+    check(task.result is not None and data.cell(row=HEADER_ROW + 1, column=2).value == row["@area_m2"]
+          and data.cell(row=HEADER_ROW + 1, column=7).hyperlink.target == row["@link"],
+          "eksport w tle liczy geometrię tak samo")
+    sample = layer_reader.build_package(layer, [FieldChoice("nr_dz", header="Nr działki")],
+                                        geo=GeoColumns(measure=True, xy=True, wgs84=True, link=True, map="geoportal"),
+                                        ellipsoid=project.ellipsoid(), personal={}, language="pl", title="Działki")
+    export(str(ROOT / "build" / f"przyklad_geometria_qgis{VERSION}.xlsx"), sample, Look(), Sheets(dictionary=True))
+
+    # Okno (wariant A): grupa pod listą pól, pomiar zależny od typu geometrii, zapis przy warstwie.
+    layer_reader.save_choices(layer, [FieldChoice("nr_dz")], None, GeoColumns())
+    box = HandoverDialog(None, None, layer=layer)
+    check(box.geo_box.isEnabled() and box.measure_check.text() == tr(ui_language(), "ui.geo.area")
+          and box.geo_columns() == GeoColumns(), "okno: grupa geometrii, domyślnie nic nie zaznaczone")
+    box.measure_check.setChecked(True)
+    box.unit_combo.setCurrentIndex(box.unit_combo.findData("m2"))
+    box.link_check.setChecked(True)
+    box.map_combo.setCurrentIndex(box.map_combo.findData("geoportal"))
+    chosen = box.geo_columns()
+    box._save_state()
+    box.close()
+    again = HandoverDialog(None, None, layer=layer)
+    check(chosen == GeoColumns(measure=True, area_unit="m2", link=True, map="geoportal")
+          and again.geo_columns() == chosen, "okno: wybór geometrii zapamiętany przy warstwie")
+    again.close()
+    lbox = HandoverDialog(None, None, layer=line)
+    check(lbox.measure_check.text() == tr(ui_language(), "ui.geo.length")
+          and [lbox.unit_combo.itemData(i) for i in range(lbox.unit_combo.count())] == ["m", "km"],
+          "okno: na warstwie liniowej długość w m albo km")
+    lbox.close()
+    project.addMapLayer(table)
+    tbox = HandoverDialog(None, None, layer=table)
+    check(not tbox.geo_box.isEnabled(), "okno: warstwa bez geometrii — grupa wyłączona")
+    tbox.close()
+    QgsSettings().setValue(UI_LANGUAGE, "pl")
+    for lang in ("pl", "en"):
+        QgsSettings().setValue(UI_LANGUAGE, lang)
+        shot = HandoverDialog(None, None, layer=layer)
+        shot.resize(980, 700)
+        shot.show()
+        QApplication.processEvents()
+        shot.grab().save(str(SCREENS / f"okno_geometria_{lang}_qgis{VERSION}.png"))
+        shot.close()
+    QgsSettings().remove(UI_LANGUAGE)
+    for name in (layer, line, degrees, table):
+        project.removeMapLayer(name.id())
+
+
 def check(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
@@ -642,6 +807,7 @@ def main() -> None:
     wait(box.task)
     check(box.layer_gone and box.last_result is not None, "warstwa usunięta w trakcie: plik jest, podstawy brak")
 
+    geometry()
     processing_algorithm(iface)
     background(layer)
 

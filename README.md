@@ -10,7 +10,7 @@ headers and labels instead of codes.
 
 | Tab | What it holds |
 |---|---|
-| **Data** | layer, scope (all / selected / in map extent), columns and their order, header, unit and description of each column (saved in the project), the decision about personal data |
+| **Data** | layer, scope (all / selected / in map extent), columns and their order, header, unit and description of each column (saved in the project), the decision about personal data, columns from geometry (area or length, coordinates, map link) |
 | **Look** | Excel table or plain range (with or without filters); separately for headers and content: font, size, colour, bold, italic, underline, fill, alignment, wrapping; banded rows; borders (line, colour, all lines / horizontal only / outline only); title above the data, frozen header, gridlines, description in a header comment, column width, print orientation, tab colour; colour presets and a live preview |
 | **Sheets** | title, file language (10 languages, English by default), extra sheets — off by default — with a choice of what goes in |
 | **Changes** | comparison with the previous export by a key column |
@@ -46,6 +46,38 @@ list in the footer (English by default); the file language is a separate
 choice on the Sheets tab. Column headers and values come from the layer,
 so they stay in the language of the data.
 
+## Columns from geometry
+
+Under the field list you can add columns calculated from each feature's
+geometry; they go at the end of the Data sheet and are off by default.
+The choice is saved with the layer in the project.
+
+| Column | Layers | Unit |
+|---|---|---|
+| Area | polygon | ha (4 decimals) or m² (2 decimals) |
+| Length | line | m (2 decimals) or km (3 decimals) |
+| X, Y | any with geometry | units of the layer CRS |
+| Latitude, longitude | any with geometry | WGS 84 decimal degrees (6 decimals) |
+| Map | any with geometry | "Show on map" hyperlink to OpenStreetMap or Geoportal (Poland) |
+
+- Area and length are calculated like `$area` and `$length` in the project:
+  on the ellipsoid from the project properties. Without one, the ellipsoid
+  of the layer CRS is used. A projected CRS without any ellipsoid is
+  measured on its plane; a geographic one is skipped with a note.
+- This is **geometric** area, not the official cadastral area, and it may
+  differ from it. The column description (Dictionary sheet and header
+  comment) says so.
+- Coordinates, latitude/longitude and the link use a point inside the
+  feature (`pointOnSurface`), not the centroid, which can fall outside an
+  L-shaped parcel. X is the easting and Y the northing, as in QGIS (Polish
+  surveying uses the opposite naming; the description says so).
+- Excel accepts at most 65,530 hyperlinks per sheet; above that the map
+  column is left out with a note.
+- The Geoportal link uses the `mapview` URL parameter, which Geoportal sets
+  itself but does not document; it may change.
+- The Changes sheet compares area and coordinates like any other column;
+  the map link is not compared.
+
 ## Processing, batch mode and `qgis_process`
 
 The same export is available as a Processing algorithm, **Data Handover →
@@ -53,7 +85,9 @@ Hand over data (XLSX)** (`dataHandover:package`): in the Processing
 Toolbox, in batch mode, in graphical models and from the command line.
 It produces the same file as the window. Columns, headers, units,
 descriptions, column order, personal data choices and the key column come
-from the layer settings the window saved in the project; the look, extra
+from the layer settings the window saved in the project (also the
+columns from geometry; the ellipsoid comes from the project or the
+`--ELLIPSOID` option); the look, extra
 sheets, author and file language come from the window's saved settings.
 Parameters: layer, selected features only, file language and colour preset
 (both "As in the plugin window" by default), previous file and key column

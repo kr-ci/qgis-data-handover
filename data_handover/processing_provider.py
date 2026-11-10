@@ -118,7 +118,7 @@ class PackageAlgorithm(QgsProcessingAlgorithm):
         self.sheets = from_dict(Sheets, saved_json("sheets"))
 
         personal = layer_reader.personal_data(layer)
-        choices, saved_key = layer_reader.saved_choices(layer, personal)
+        choices, saved_key, geo = layer_reader.saved_choices(layer, personal)
         if not any(c.export for c in choices):
             raise QgsProcessingException(_t("alg.error.no_fields"))
         scope = "selected" if self.parameterAsBoolean(parameters, self.SELECTED_ONLY, context) else "all"
@@ -137,7 +137,8 @@ class PackageAlgorithm(QgsProcessingAlgorithm):
         try:
             self.plan = layer_reader.plan_package(
                 layer, choices, scope=scope, author=str(settings.value(SETTINGS + "author", "") or "").strip(),
-                language=language, key=key, personal=personal)
+                language=language, key=key, personal=personal, geo=geo,
+                ellipsoid=context.ellipsoid())
         except PackageError as exc:
             raise QgsProcessingException(str(exc)) from exc
         return True

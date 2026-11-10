@@ -1,0 +1,12 @@
+# Sonda R7 (2026-11-10): 200 000 punktów w EPSG:2180, QGIS 4.2.3, eksport w tle (QgsTask).
+# N=200000 scripts/qgis-probe.sh 4.2.3 sondy/r05_duza_warstwa.py task [geo]
+# „geo” dokłada X/Y, szerokość/długość WGS84 i link (link wypada: ponad 65 530 hiperłączy).
+tryb=task obiekty=200000 odczyt=2.6s razem=50.1s najdluzsze_zamrozenie=0.18s plik=6.1MB
+tryb=task obiekty=200000 odczyt=2.7s razem=52.6s najdluzsze_zamrozenie=0.18s plik=6.1MB
+tryb=task+geo obiekty=200000 odczyt=4.3s razem=85.4s najdluzsze_zamrozenie=2.55s plik=10.8MB
+tryb=task+geo obiekty=200000 odczyt=4.3s razem=80.2s najdluzsze_zamrozenie=0.63s plik=10.8MB
+tryb=task+geo obiekty=200000 odczyt=4.1s razem=80.6s najdluzsze_zamrozenie=1.06s plik=10.8MB
+tryb=task+geo obiekty=200000 odczyt=4.4s razem=88.8s najdluzsze_zamrozenie=0.56s plik=10.8MB
+# Przerwa wypada tuż po starcie zapisu openpyxl (wszystkie komórki już wpisane) i zostaje
+# także z wyłączonym gc na czas zapisu (1,03 s) — koszt liczby komórek (2,2 mln zamiast 1,4 mln),
+# nie liczenia geometrii (plan 1 ms, liczenie w tle +1,5 s odczytu).

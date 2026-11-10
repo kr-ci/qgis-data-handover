@@ -8,6 +8,7 @@ liczy zmiany i zapisuje arkusze, żeby plik nie przeczył sam sobie.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import datetime as dt
 import math
 import os
@@ -28,7 +29,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from . import diff, privacy
 from .i18n import DATE_FORMATS, count_label, format_number, tr
-from .model import DICTIONARY_ITEMS, HEADER_ROW, MAX_ROWS, CellLook, Column, Look, Package, Sheets, Value
+from .model import DICTIONARY_ITEMS, GEO_PREFIX, HEADER_ROW, MAX_ROWS, CellLook, Column, Look, Package, Sheets, Value
 
 FORMAT_VERSION = "1"
 META_SHEET = "_handover"
@@ -36,6 +37,9 @@ CELL_LIMIT = 32_767
 # Excel trzyma liczby jako double: pewnych jest 15 cyfr znaczących.
 EXACT_INT_LIMIT = 10**15
 WIDTH_SAMPLE = 300
+# Excel przyjmuje najwyżej 65 530 hiperłączy w arkuszu; plik z większą liczbą uznaje za uszkodzony.
+HYPERLINK_LIMIT = 65_530
+LINK_COLOR = "0563C1"  # kolor zwykłego hiperłącza w Excelu
 
 FILL_ADDED = "E2EFDA"
 FILL_REMOVED = "FCE4D6"
@@ -149,6 +153,8 @@ def display(value: Value, col: Optional[Column], lang: str) -> str:
     """Wartość jako tekst dla człowieka (arkusz „Zmiany”, komentarze, szerokość)."""
     if value is None:
         return ""
+    if col is not None and col.kind == "link":
+        return tr(lang, "geo.link.label")  # w komórce jest ten tekst, adres siedzi w hiperłączu
     date = DATE_FORMATS.get(lang, DATE_FORMATS["en"])[1]
     if isinstance(value, dt.datetime):
         return value.strftime(date + " %H:%M")
@@ -235,7 +241,9 @@ def changes_against(
     if key not in snapshot.columns:
         raise PackageError(tr(lang, "error.key_missing", key=key))
     names = [c.name for c in pkg.columns]
-    common = [n for n in names if n in snapshot.columns and n != key]
+    # Link wynika ze współrzędnych, a z poprzedniego pliku odczytalibyśmy tylko jego tekst.
+    links = {c.name for c in pkg.columns if c.kind == "link"}
+    common = [n for n in names if n in snapshot.columns and n != key and n not in links]
     # Kolumna maskowana teraz mogła być jawna poprzednio: maskujemy też stare
     # wartości, inaczej pełne dane wróciłyby w „Było” i w dymkach komórek.
     old_rows = [
@@ -282,7 +290,9 @@ def export(
     lang = pkg.language
     if len(pkg.rows) > MAX_ROWS:
         raise PackageError(tr(lang, "error.too_many_rows", n=len(pkg.rows), limit=MAX_ROWS))
+    pkg, link_notes = _drop_excess_links(pkg)
     rows, notes = prepare_rows(pkg)
+    notes = link_notes + notes
     changes: Optional[list[diff.Change]] = None
     snapshot: Optional[Snapshot] = None
     if previous:
@@ -319,6 +329,16 @@ def export(
     if progress is not None:
         progress(100.0)
     return ExportResult(path, len(rows), changes or [], notes)
+
+
+def _drop_excess_links(pkg: Package) -> tuple[Package, list[str]]:
+    """Bez kolumn linku, gdy hiperłączy byłoby więcej, niż Excel przyjmie w arkuszu."""
+    keep = [i for i, c in enumerate(pkg.columns) if c.kind != "link"]
+    if len(keep) == len(pkg.columns) or len(pkg.rows) <= HYPERLINK_LIMIT:
+        return pkg, []
+    note = tr(pkg.language, "note.link.dropped", limit=format_number(pkg.language, f"{HYPERLINK_LIMIT:,}"))
+    return dataclasses.replace(pkg, columns=[pkg.columns[i] for i in keep],
+                               rows=[[row[i] for i in keep] for row in pkg.rows]), [note]
 
 
 def _save(wb: Workbook, path: str, canceled: CancelCheck = None) -> None:
@@ -524,6 +544,9 @@ def _write_data(
     fill = _solid(style.fill) if style.fill else None
     formats = [number_format(c, lang) for c in pkg.columns]
     aligns = [_alignment(style, c.is_identifier) for c in pkg.columns]
+    links = {i for i, c in enumerate(pkg.columns) if c.kind == "link"}
+    link_font = _font(style, color=LINK_COLOR, underline="single")
+    link_label = tr(lang, "geo.link.label")
     step = max(1, len(rows) // 100)
     for r, row in enumerate(rows, start=1):
         if r % step == 0:
@@ -532,11 +555,16 @@ def _write_data(
                 progress(90.0 * r / len(rows))  # ostatnie 10% to zapis pliku
         for c, value in enumerate(row):
             cell = ws.cell(row=hr + r, column=c + 1)
-            _set_text(cell, value)
+            if c in links and isinstance(value, str):
+                _set_text(cell, link_label)
+                cell.hyperlink = value
+                cell.font = link_font
+            else:
+                _set_text(cell, value)
             cell.number_format = formats[c]
             cell.alignment = aligns[c]
             cell.border = borders.at(r, c)
-            if font is not None:
+            if font is not None and c not in links:
                 cell.font = font
             if fill is not None:
                 cell.fill = fill
@@ -647,7 +675,7 @@ def _write_dictionary(ws: Worksheet, pkg: Package, look: Look, items: Sequence[s
             remarks.append(tr(lang, "dict.masked"))
         values = {
             "header": header,
-            "field": col.name,
+            "field": tr(lang, "dict.geometry_source") if col.name.startswith(GEO_PREFIX) else col.name,
             "kind": tr(lang, f"kind.{col.kind}"),
             "unit": col.unit,
             "description": "\n".join(remarks),

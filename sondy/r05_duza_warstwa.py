@@ -4,7 +4,8 @@ Uruchomienie (w obrazie QGIS, z katalogu projektu):
     scripts/qgis-probe.sh 4.2.3 sondy/r05_duza_warstwa.py [sync|task]
 
 Tryb `sync` to eksport tak jak przed R5 (w wątku okna), `task` — przez
-zadanie w tle. „Zamrożenie” to najdłuższa przerwa między kolejnymi
+zadanie w tle. Drugi argument `geo` (R7) dokłada kolumny z geometrii: X/Y,
+WGS84 i link (link przy ponad 65 530 wierszach wypada z uwagą). „Zamrożenie” to najdłuższa przerwa między kolejnymi
 tyknięciami zegara co 20 ms: tyle czasu QGIS nie obsługiwał zdarzeń.
 """
 
@@ -27,10 +28,12 @@ app = start_app()
 
 from data_handover import layer_reader  # noqa: E402
 from data_handover.core import xlsx  # noqa: E402
+from data_handover.core.model import GeoColumns  # noqa: E402
 from data_handover.layer_reader import FieldChoice  # noqa: E402
 
 N = int(os.environ.get("N", "200000"))
 MODE = sys.argv[1] if len(sys.argv) > 1 else "sync"
+GEO = len(sys.argv) > 2 and sys.argv[2] == "geo"
 
 
 def make_layer() -> QgsVectorLayer:
@@ -51,6 +54,7 @@ def make_layer() -> QgsVectorLayer:
 def main() -> None:
     layer = make_layer()
     choices = [FieldChoice(n) for n in layer.fields().names()]
+    extra = {"geo": GeoColumns(xy=True, wgs84=True, link=True)} if GEO else {}
     path = os.path.join(tempfile.mkdtemp(), "duza.xlsx")
     ticks: list[float] = []
     timer = QTimer()
@@ -60,13 +64,13 @@ def main() -> None:
     start = time.perf_counter()
     ticks.append(start)
     if MODE == "sync":
-        pkg = layer_reader.build_package(layer, choices, personal={})
+        pkg = layer_reader.build_package(layer, choices, personal={}, **extra)
         read = time.perf_counter() - start
         rows = xlsx.export(path, pkg).rows
     else:
         from data_handover.export_task import ExportTask
 
-        task = ExportTask("sonda", layer_reader.plan_package(layer, choices, personal={}), path)
+        task = ExportTask("sonda", layer_reader.plan_package(layer, choices, personal={}, **extra), path)
         from qgis.core import QgsApplication
 
         QgsApplication.taskManager().addTask(task)
@@ -82,7 +86,7 @@ def main() -> None:
     ticks.append(time.perf_counter())
     freeze = max(b - a for a, b in zip(ticks, ticks[1:]))
     size = os.path.getsize(path) / 1e6
-    print(f"tryb={MODE} obiekty={N} odczyt={read:.1f}s razem={total:.1f}s "
+    print(f"tryb={MODE}{'+geo' if GEO else ''} obiekty={N} odczyt={read:.1f}s razem={total:.1f}s "
           f"najdluzsze_zamrozenie={freeze:.2f}s plik={size:.1f}MB")
 
 

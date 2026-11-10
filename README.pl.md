@@ -10,7 +10,7 @@ nagłówkami i etykietami zamiast kodów.
 
 | Zakładka | Co zawiera |
 |---|---|
-| **Dane** | warstwa, zakres (wszystkie / zaznaczone / w zasięgu mapy), kolumny i ich kolejność, nagłówek, jednostka i opis kolumny (zapamiętywane w projekcie), decyzja o danych osobowych |
+| **Dane** | warstwa, zakres (wszystkie / zaznaczone / w zasięgu mapy), kolumny i ich kolejność, nagłówek, jednostka i opis kolumny (zapamiętywane w projekcie), decyzja o danych osobowych, kolumny z geometrii (powierzchnia albo długość, współrzędne, link do mapy) |
 | **Wygląd** | tabela Excela albo zwykły zakres (z filtrami lub bez); osobno dla nagłówków i zawartości: czcionka, rozmiar, kolor, pogrubienie, kursywa, podkreślenie, tło, wyrównanie, zawijanie; pasy co drugi wiersz; obramowanie (linia, kolor, wszystkie linie / tylko poziome / tylko obrys); tytuł nad danymi, zamrożony nagłówek, siatka, opis w dymku nagłówka, szerokość kolumn, orientacja wydruku, kolor karty; gotowe kolorystyki i podgląd na żywo |
 | **Arkusze** | tytuł, język pliku (10 języków, domyślnie angielski), arkusze dodatkowe — domyślnie wyłączone — z wyborem zawartości |
 | **Zmiany** | porównanie z poprzednim eksportem według kolumny-klucza |
@@ -45,6 +45,38 @@ rosyjsku, koreańsku, japońsku i chińsku. Język okna wybierasz na liście
 osobno w zakładce Arkusze. Nagłówki i wartości kolumn pochodzą z warstwy,
 więc zostają w języku danych.
 
+## Kolumny z geometrii
+
+Pod listą pól można dodać kolumny liczone z geometrii obiektu; trafiają na
+koniec arkusza Dane i są domyślnie wyłączone. Wybór zapisuje się przy
+warstwie w projekcie.
+
+| Kolumna | Warstwy | Jednostka |
+|---|---|---|
+| Powierzchnia | poligonowe | ha (4 miejsca po przecinku) albo m² (2 miejsca) |
+| Długość | liniowe | m (2 miejsca) albo km (3 miejsca) |
+| X, Y | każda z geometrią | jednostki układu warstwy |
+| Szerokość, długość geograficzna | każda z geometrią | stopnie dziesiętne WGS 84 (6 miejsc) |
+| Mapa | każda z geometrią | hiperłącze „Pokaż na mapie” do OpenStreetMap albo Geoportalu |
+
+- Powierzchnię i długość liczymy jak `$area` i `$length` w projekcie: na
+  elipsoidzie z właściwości projektu. Bez niej — na elipsoidzie układu
+  warstwy. Układ odwzorowany bez żadnej elipsoidy mierzymy na jego
+  płaszczyźnie; geograficzny pomijamy z uwagą.
+- To powierzchnia **geometryczna**, nie ewidencyjna, i może się od niej
+  różnić. Mówi to opis kolumny (arkusz Słownik i dymek nagłówka).
+- Współrzędne, szerokość/długość i link liczymy z punktu leżącego wewnątrz
+  obiektu (`pointOnSurface`), nie z centroidu, który przy działce
+  w kształcie „L” może wypaść poza nią. X to współrzędna wschodnia, Y —
+  północna, jak w QGIS (w polskiej geodezji odwrotnie; opis kolumny to
+  mówi).
+- Excel przyjmuje najwyżej 65 530 hiperłączy w arkuszu; powyżej kolumna
+  z linkiem jest pomijana z uwagą.
+- Link do Geoportalu używa parametru adresu `mapview`, który Geoportal sam
+  ustawia, ale nie opisuje w dokumentacji — może się zmienić.
+- Arkusz Zmiany porównuje powierzchnię i współrzędne jak każdą kolumnę;
+  linku nie porównuje.
+
 ## Processing, tryb wsadowy i `qgis_process`
 
 Ten sam eksport jest dostępny jako algorytm Processing **Data Handover →
@@ -52,7 +84,8 @@ Przekaż dane (XLSX)** (`dataHandover:package`): w Przyborniku Processing,
 w trybie wsadowym, w modelu graficznym i z wiersza poleceń. Daje ten sam
 plik co okno. Kolumny, nagłówki, jednostki, opisy, kolejność kolumn,
 decyzje o danych osobowych i kolumnę klucza bierze z ustawień warstwy,
-które okno zapisało w projekcie; wygląd, arkusze dodatkowe, autora i język
+które okno zapisało w projekcie (także kolumny z geometrii; elipsoidę —
+z projektu albo z opcji `--ELLIPSOID`); wygląd, arkusze dodatkowe, autora i język
 pliku — z zapisanych ustawień okna. Parametry: warstwa, tylko zaznaczone
 obiekty, język pliku i gotowa kolorystyka (domyślnie „Jak w oknie
 wtyczki”), poprzedni plik i kolumna klucza (do arkusza Zmiany; pusty klucz

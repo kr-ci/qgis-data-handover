@@ -12,18 +12,20 @@ from openpyxl import load_workbook
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from data_handover.core import diff, privacy  # noqa: E402
-from data_handover.core.i18n import LANGUAGES, TEXT, count_label  # noqa: E402
+from data_handover.core import diff, privacy, xlsx  # noqa: E402
+from data_handover.core.i18n import LANGUAGES, TEXT, count_label, tr  # noqa: E402
 from data_handover.core.model import (  # noqa: E402
     HEADER_ROW,
     THEMES,
     CellLook,
     Column,
+    GeoColumns,
     Look,
     Package,
     Sheets,
     from_dict,
     look_with_theme,
+    map_url,
     theme_from_color,
     to_dict,
 )
@@ -345,6 +347,10 @@ def test_settings_roundtrip_and_tolerance() -> None:
     sheets = from_dict(Sheets, json.loads(json.dumps(to_dict(Sheets(about=True, about_items=("crs",))))))
     assert sheets == Sheets(about=True, about_items=("crs",))
     assert from_dict(Look, None) == Look()
+    geo = GeoColumns(measure=True, area_unit="m2", link=True, map="geoportal")
+    assert from_dict(GeoColumns, json.loads(json.dumps(to_dict(geo)))) == geo
+    bad = from_dict(GeoColumns, {"measure": True, "area_unit": "akr", "length_unit": 5, "map": "google"})
+    assert bad == GeoColumns(measure=True)
 
 
 def test_large_export_is_fast_enough(tmp_path: Path) -> None:
@@ -544,3 +550,64 @@ def test_canceled_export_keeps_previous_file(tmp_path: Path, monkeypatch: pytest
         export(str(target), parcels(), LOOK, canceled=lambda: state["cancel"])
     assert target.read_bytes() == b"poprzednia wersja"
     assert [p.name for p in tmp_path.iterdir()] == ["plik.xlsx"]
+
+
+# --- R7: kolumny z geometrii -------------------------------------------------
+
+OSM = "https://www.openstreetmap.org/?mlat=52.245539&mlon=21.014835#map=18/52.245539/21.014835"
+
+
+def test_map_url() -> None:
+    assert map_url("osm", 52.2455391, 21.0148349) == OSM
+    assert map_url("geoportal", 52.245539, 21.014835) == (
+        "https://mapy.geoportal.gov.pl/imapnext/imap/?mapview=52.245539,21.014835,1000s")
+
+
+def geo_package(links: list[object], area: list[object] | None = None) -> Package:
+    columns = [Column("nr_dz", "Nr działki", "text", is_identifier=True),
+               Column("@area_ha", "Powierzchnia", "decimal", unit="ha", decimals=4),
+               Column("@link", "Mapa", "link")]
+    areas = area if area is not None else [0.0512] * len(links)
+    rows = [[f"{i}/1", a, link] for i, (a, link) in enumerate(zip(areas, links), start=1)]
+    return Package(title="Działki", columns=columns, rows=rows, language="pl", key="nr_dz")  # type: ignore[arg-type]
+
+
+def test_link_column_is_clickable_text(tmp_path: Path) -> None:
+    path = str(tmp_path / "geo.xlsx")
+    export(path, geo_package([OSM, None]), LOOK)
+    ws = load_workbook(path)["Dane"]
+    cell = ws.cell(row=HEADER_ROW + 1, column=3)
+    assert cell.value == tr("pl", "geo.link.label")
+    assert cell.hyperlink is not None and cell.hyperlink.target == OSM
+    assert cell.font.underline == "single" and cell.font.color.rgb.endswith(xlsx.LINK_COLOR)
+    empty = ws.cell(row=HEADER_ROW + 2, column=3)
+    assert empty.value is None and empty.hyperlink is None
+    assert ws.cell(row=HEADER_ROW + 1, column=2).number_format.endswith('"ha"')
+
+
+def test_link_column_not_compared(tmp_path: Path) -> None:
+    first = str(tmp_path / "v1.xlsx")
+    export(first, geo_package([OSM, OSM]), LOOK)
+    other = OSM.replace("21.014835", "21.014900")
+    result = export(str(tmp_path / "v2.xlsx"), geo_package([other, other]), LOOK, previous=first)
+    assert result.changes == []
+
+
+def test_rounded_measure_roundtrip_has_no_changes(tmp_path: Path) -> None:
+    first = str(tmp_path / "v1.xlsx")
+    export(first, geo_package([OSM, OSM], area=[0.0512, 12.3457]), LOOK)
+    result = export(str(tmp_path / "v2.xlsx"), geo_package([OSM, OSM], area=[0.0512, 12.3457]), LOOK,
+                    previous=first)
+    assert result.changes == []
+
+
+def test_too_many_links_are_dropped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(xlsx, "HYPERLINK_LIMIT", 2)
+    path = str(tmp_path / "many.xlsx")
+    result = export(path, geo_package([OSM, OSM, OSM]), LOOK, sheets=ALL)
+    wb = load_workbook(path)
+    assert [c.value for c in wb["Dane"][HEADER_ROW]] == ["Nr działki", "Powierzchnia"]
+    fields = [r[1] for r in wb["Słownik"].iter_rows(min_row=HEADER_ROW + 1, values_only=True)]
+    assert fields == ["nr_dz", tr("pl", "dict.geometry_source")]
+    assert [r[1] for r in wb[META_SHEET].iter_rows(values_only=True) if r[0] == "column"] == ["nr_dz", "@area_ha"]
+    assert tr("pl", "note.link.dropped", limit="2") in result.notes

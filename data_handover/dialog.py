@@ -10,7 +10,7 @@ import os
 import re
 from typing import Any, Optional
 
-from qgis.core import Qgis, QgsMessageLog, QgsSettings, QgsVectorLayer
+from qgis.core import Qgis, QgsMessageLog, QgsProject, QgsSettings, QgsVectorLayer
 from qgis.gui import QgsColorButton, QgsFieldComboBox, QgsFileWidget, QgsMapLayerComboBox
 from qgis.PyQt.QtCore import Qt, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPixmap
@@ -56,8 +56,10 @@ from .core.model import (
     BORDER_SCOPES,
     BORDER_STYLES,
     DICTIONARY_ITEMS,
+    MAP_SERVICES,
     THEMES,
     CellLook,
+    GeoColumns,
     Look,
     Sheets,
     Theme,
@@ -221,6 +223,7 @@ class HandoverDialog(QDialog):
         self.progress_item: Any = None
         self.layer_gone = False
         self.last_result: Optional[xlsx.ExportResult] = None
+        self._geo = GeoColumns()  # zapisane ustawienia geometrii warstwy (jednostka drugiego typu pomiaru)
 
         self.setWindowTitle(self.t("ui.title"))
         self.setMinimumSize(980, 700)
@@ -348,7 +351,73 @@ class HandoverDialog(QDialog):
             button.clicked.connect(lambda _checked=False, s=step: self._move(s))
             row.addWidget(button)
         layout.addLayout(row)
+        layout.addWidget(self._geo_box())
         return tab
+
+    def _geo_box(self) -> QGroupBox:
+        """Kolumny z geometrii (R7, wariant A makiet): pod listą pól, bo też trafiają do tabeli."""
+        self.geo_box = QGroupBox(self.t("ui.geo.group"))
+        column = QVBoxLayout(self.geo_box)
+        row = QHBoxLayout()
+        self.measure_check = QCheckBox()
+        self.unit_combo = QComboBox()
+        self.xy_check = QCheckBox(self.t("ui.geo.xy"))
+        self.wgs84_check = QCheckBox(self.t("ui.geo.wgs84"))
+        self.link_check = QCheckBox(self.t("ui.geo.link").replace("&", "&&"))
+        self.map_combo = QComboBox()
+        for service in MAP_SERVICES:
+            self.map_combo.addItem(self.t(f"geo.service.{service}"), service)
+        for widget in (self.measure_check, self.unit_combo):
+            row.addWidget(widget)
+        row.addSpacing(12)
+        row.addWidget(self.xy_check)
+        row.addWidget(self.wgs84_check)
+        row.addSpacing(12)
+        row.addWidget(self.link_check)
+        row.addWidget(self.map_combo)
+        row.addStretch()
+        column.addLayout(row)
+        self.geo_hint = QLabel()
+        self.geo_hint.setObjectName("hint")
+        self.geo_hint.setWordWrap(True)
+        column.addWidget(self.geo_hint)
+        self.measure_check.toggled.connect(self.unit_combo.setEnabled)
+        self.link_check.toggled.connect(self.map_combo.setEnabled)
+        return self.geo_box
+
+    def geo_columns(self) -> GeoColumns:
+        unit = str(self.unit_combo.currentData() or "")
+        return GeoColumns(
+            measure=self.measure_check.isChecked() and not self.measure_check.isHidden(),
+            area_unit=unit if unit in ("ha", "m2") else self._geo.area_unit,
+            length_unit=unit if unit in ("m", "km") else self._geo.length_unit,
+            xy=self.xy_check.isChecked(), wgs84=self.wgs84_check.isChecked(),
+            link=self.link_check.isChecked(), map=str(self.map_combo.currentData()),
+        )
+
+    def _set_geo(self, geo: GeoColumns, kind: str) -> None:
+        """Pokazuje ustawienia geometrii warstwy; pomiar zależy od typu geometrii."""
+        self._geo = geo
+        measure = {"polygon": "area", "line": "length"}.get(kind, "")
+        self.unit_combo.clear()
+        if measure:
+            self.measure_check.setText(self.t(f"ui.geo.{measure}"))
+            units = (("ha", "ha"), ("m²", "m2")) if measure == "area" else (("m", "m"), ("km", "km"))
+            for label, code in units:
+                self.unit_combo.addItem(label, code)
+            current = geo.area_unit if measure == "area" else geo.length_unit
+            self.unit_combo.setCurrentIndex(max(0, self.unit_combo.findData(current)))
+        for widget in (self.measure_check, self.unit_combo):
+            widget.setHidden(not measure)
+        self.measure_check.setChecked(geo.measure and bool(measure))
+        self.xy_check.setChecked(geo.xy)
+        self.wgs84_check.setChecked(geo.wgs84)
+        self.link_check.setChecked(geo.link)
+        self.map_combo.setCurrentIndex(max(0, self.map_combo.findData(geo.map)))
+        self.unit_combo.setEnabled(self.measure_check.isChecked())
+        self.map_combo.setEnabled(geo.link)
+        self.geo_box.setEnabled(kind != "none")
+        self.geo_hint.setText(self.t("ui.geo.hint" if kind != "none" else "ui.geo.none"))
 
     def _look_tab(self) -> QWidget:
         tab = QWidget()
@@ -692,6 +761,7 @@ class HandoverDialog(QDialog):
         self.table.setRowCount(0)
         self.key_combo.setLayer(self.layer)
         if self.layer is None:
+            self._set_geo(GeoColumns(), "none")
             self._update_scope_labels()
             return
         self.samples = layer_reader.sample_values(self.layer, 200, represented=True)
@@ -703,6 +773,7 @@ class HandoverDialog(QDialog):
         order = saved_order + [n for n in names if n not in saved_order]
         self.title_edit.setText(self.layer.name())
         self.key_combo.setField(saved.get("key", ""))
+        self._set_geo(from_dict(GeoColumns, saved.get("geometry")), layer_reader.geometry_kind(self.layer))
         previous = self.layer.customProperty(PREVIOUS, "")
         self.previous_widget.setFilePath(previous)
         self.changes_check.setChecked(bool(previous and saved.get("key")))
@@ -957,6 +1028,7 @@ class HandoverDialog(QDialog):
                 extent_crs=canvas.mapSettings().destinationCrs() if canvas is not None else None,
                 title=title, author=self.author_edit.text().strip(), note=self.note_edit.toPlainText().strip(),
                 language=lang, key=key, personal=self.personal,
+                geo=self.geo_columns(), ellipsoid=QgsProject.instance().ellipsoid(),
             )
         except xlsx.PackageError as exc:
             self._warn(str(exc))
@@ -1019,7 +1091,8 @@ class HandoverDialog(QDialog):
     def _save_state(self) -> None:
         """Ustawienia okna: pola warstwy w projekcie, wygląd i arkusze w ustawieniach użytkownika."""
         if self.layer is not None:
-            layer_reader.save_choices(self.layer, self.choices(), self.key_combo.currentField() or None)
+            layer_reader.save_choices(self.layer, self.choices(), self.key_combo.currentField() or None,
+                                      self.geo_columns())
         for name, value in (("look", json.dumps(to_dict(self.look()))),
                             ("sheets", json.dumps(to_dict(self.sheets()))),
                             ("custom_color", self.custom_color), ("author", self.author_edit.text().strip()),

@@ -13,10 +13,17 @@ from qgis.core import (
     QgsApplication,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
+    QgsCoordinateTransformContext,
+    QgsCsException,
+    QgsDistanceArea,
+    QgsEllipsoidUtils,
     QgsFeatureRequest,
     QgsField,
+    QgsGeometry,
+    QgsPointXY,
     QgsProject,
     QgsRectangle,
+    QgsUnitTypes,
     QgsVectorLayer,
     QgsVectorLayerFeatureSource,
 )
@@ -24,7 +31,7 @@ from qgis.PyQt.QtCore import QDate, QDateTime, QMetaType, QTime
 
 from .core import privacy
 from .core.i18n import tr
-from .core.model import MAX_ROWS, Column, Package, Value
+from .core.model import GEO_PREFIX, MAX_ROWS, Column, GeoColumns, Package, Value, from_dict, map_url, to_dict
 from .core.xlsx import CanceledError, PackageError
 
 # Kody typów są wspólne dla QVariant.Type (Qt5) i QMetaType.Type (Qt6).
@@ -110,8 +117,9 @@ def load_choices(layer: QgsVectorLayer) -> dict[str, dict[str, Any]]:
     return data if isinstance(data, dict) else {}
 
 
-def saved_choices(layer: QgsVectorLayer, personal: dict[str, str]) -> tuple[list[FieldChoice], Optional[str]]:
-    """Ustawienia pól i klucz tak, jak okno pokazuje je po otwarciu.
+def saved_choices(layer: QgsVectorLayer,
+                  personal: dict[str, str]) -> tuple[list[FieldChoice], Optional[str], GeoColumns]:
+    """Ustawienia pól, klucz i kolumny z geometrii tak, jak okno pokazuje je po otwarciu.
 
     Pole bez zapisanych ustawień: eksportowane, chyba że wygląda na dane
     osobowe; pole osobowe eksportowane jawnie — domyślnie maskowane.
@@ -134,15 +142,20 @@ def saved_choices(layer: QgsVectorLayer, personal: dict[str, str]) -> tuple[list
             description=str(info.get("description") or "").strip(),
             protect=str(info.get("protect") or "mask") if name in personal else "",
         ))
-    return choices, str(saved.get("key") or "") or None
+    return choices, str(saved.get("key") or "") or None, from_dict(GeoColumns, saved.get("geometry"))
 
 
-def save_choices(layer: QgsVectorLayer, choices: list[FieldChoice], key: Optional[str]) -> None:
+def save_choices(layer: QgsVectorLayer, choices: list[FieldChoice], key: Optional[str],
+                 geo: Optional[GeoColumns] = None) -> None:
+    """Zapis ustawień warstwy w projekcie; bez `geo` zapisane kolumny z geometrii zostają."""
+    if geo is None:
+        geo = from_dict(GeoColumns, load_choices(layer).get("geometry"))
     data = {
         "order": [c.name for c in choices],
         "key": key or "",
         "fields": {c.name: {"export": c.export, "header": c.header, "unit": c.unit,
                             "description": c.description, "protect": c.protect} for c in choices},
+        "geometry": to_dict(geo),
     }
     layer.setCustomProperty(PROPERTY, json.dumps(data, ensure_ascii=False))
 
@@ -249,7 +262,8 @@ def describe(layer: QgsVectorLayer, index: int, choice: FieldChoice) -> Column:
 
 
 def _request(layer: QgsVectorLayer, scope: str, extent: Optional[QgsRectangle],
-             extent_crs: Optional[QgsCoordinateReferenceSystem], indices: list[int]) -> QgsFeatureRequest:
+             extent_crs: Optional[QgsCoordinateReferenceSystem], indices: list[int],
+             geometry: bool = False) -> QgsFeatureRequest:
     request = QgsFeatureRequest().setSubsetOfAttributes(indices)
     if scope == "selected":
         request.setFilterFids(layer.selectedFeatureIds())
@@ -260,9 +274,148 @@ def _request(layer: QgsVectorLayer, scope: str, extent: Optional[QgsRectangle],
             rect = transform.transformBoundingBox(rect)
         request.setFilterRect(rect)
         request.setFlags(Qgis.FeatureRequestFlag.ExactIntersect)
-    else:
+    elif not geometry:
         request.setFlags(Qgis.FeatureRequestFlag.NoGeometry)
     return request
+
+
+# --------------------------------------------------------------------------
+# Kolumny z geometrii (R7)
+# --------------------------------------------------------------------------
+
+_GEOMETRY_KINDS = {Qgis.GeometryType.Point: "point", Qgis.GeometryType.Line: "line",
+                   Qgis.GeometryType.Polygon: "polygon"}
+WGS84 = "EPSG:4326"
+
+
+def geometry_kind(layer: QgsVectorLayer) -> str:
+    """„polygon”, „line”, „point” albo „none” (tabela bez geometrii lub typ nieznany)."""
+    return _GEOMETRY_KINDS.get(layer.geometryType(), "none") if layer.isSpatial() else "none"
+
+
+def _ellipsoid(crs: QgsCoordinateReferenceSystem, project_ellipsoid: str) -> str:
+    """Elipsoida projektu, a bez niej elipsoida układu warstwy; „” = żadnej nie da się użyć."""
+    for candidate in (project_ellipsoid, crs.ellipsoidAcronym()):
+        if candidate and candidate.upper() != "NONE" and QgsDistanceArea().setEllipsoid(candidate):
+            return candidate
+    return ""
+
+
+def _ellipsoid_name(acronym: str) -> str:
+    for definition in QgsEllipsoidUtils.definitions():
+        if definition.acronym == acronym and definition.description:
+            return str(definition.description)
+    return acronym
+
+
+@dataclass
+class _GeoPlan:
+    """Parametry liczenia ustalone w wątku okna; `calculator()` wołamy w wątku, który liczy."""
+
+    crs: QgsCoordinateReferenceSystem
+    context: QgsCoordinateTransformContext
+    ellipsoid: str  # „” = płaszczyzna układu warstwy
+    planar_factor: float  # jednostka układu → metr (tylko płaszczyzna)
+    measure: str  # „area”, „length” albo „” (bez pomiaru)
+    divisor: float  # m² → ha, m → km
+    decimals: int
+    xy: bool
+    xy_decimals: int
+    wgs84: bool
+    link: bool
+    service: str
+
+    def calculator(self) -> Callable[[Optional[QgsGeometry]], list[Value]]:
+        """Funkcja: geometria → wartości kolumn. Obiekty transformacji powstają w wątku wołającego."""
+        calc = QgsDistanceArea()
+        calc.setSourceCrs(self.crs, self.context)
+        if self.ellipsoid:
+            calc.setEllipsoid(self.ellipsoid)
+        to_wgs = QgsCoordinateTransform(self.crs, QgsCoordinateReferenceSystem(WGS84), self.context)
+        need_wgs = self.wgs84 or self.link
+        width = (1 if self.measure else 0) + 2 * self.xy + 2 * self.wgs84 + self.link
+
+        def values(geometry: Optional[QgsGeometry]) -> list[Value]:
+            if geometry is None or geometry.isNull() or geometry.isEmpty():
+                return [None] * width
+            out: list[Value] = []
+            if self.measure:
+                size = calc.measureArea(geometry) if self.measure == "area" else calc.measureLength(geometry)
+                factor = self.planar_factor ** (2 if self.measure == "area" else 1) if not self.ellipsoid else 1.0
+                out.append(round(size * factor / self.divisor, self.decimals))
+            point = geometry.pointOnSurface()
+            if point.isNull() or point.isEmpty():
+                return out + [None] * (width - len(out))
+            xy = point.asPoint()
+            if self.xy:
+                out += [round(xy.x(), self.xy_decimals), round(xy.y(), self.xy_decimals)]
+            if need_wgs:
+                try:
+                    wgs: Optional[QgsPointXY] = to_wgs.transform(QgsPointXY(xy))
+                except QgsCsException:
+                    wgs = None
+                lat = round(wgs.y(), 6) if wgs is not None else None
+                lon = round(wgs.x(), 6) if wgs is not None else None
+                if self.wgs84:
+                    out += [lat, lon]
+                if self.link:
+                    out.append(map_url(self.service, lat, lon) if lat is not None and lon is not None else None)
+            return out
+
+        return values
+
+
+def _geo_plan(layer: QgsVectorLayer, geo: GeoColumns, project_ellipsoid: str, language: str,
+              notes: list[str]) -> tuple[Optional[_GeoPlan], list[Column]]:
+    """Kolumny z geometrii i parametry ich liczenia (wątek okna). Uwagi dopisuje do `notes`."""
+    kind = geometry_kind(layer)
+    if kind == "none" or not geo.any:
+        return None, []
+    crs = layer.crs()
+    authid = crs.authid() or crs.description()
+    ellipsoid = _ellipsoid(crs, project_ellipsoid)
+    units = crs.mapUnits()
+    planar_ok = not crs.isGeographic() and units not in (Qgis.DistanceUnit.Degrees, Qgis.DistanceUnit.Unknown)
+    columns: list[Column] = []
+    measure = ""
+    divisor, decimals = 1.0, 2
+    if geo.measure and kind in ("polygon", "line"):
+        if not ellipsoid and not planar_ok:
+            notes.append(tr(language, "note.geo.measure_skipped", crs=authid))
+        else:
+            measure = "area" if kind == "polygon" else "length"
+            unit = geo.area_unit if measure == "area" else geo.length_unit
+            divisor, decimals, shown = {"ha": (10_000.0, 4, "ha"), "m2": (1.0, 2, "m²"),
+                                        "m": (1.0, 2, "m"), "km": (1000.0, 3, "km")}[unit]
+            method = (tr(language, f"geo.desc.{measure}", ellipsoid=_ellipsoid_name(ellipsoid), crs=authid)
+                      if ellipsoid else tr(language, f"geo.desc.{measure}.planar", crs=authid))
+            columns.append(Column(f"{GEO_PREFIX}{measure}_{unit}", tr(language, f"geo.col.{measure}"), "decimal",
+                                  unit=shown, description=method, decimals=decimals))
+    xy_decimals = 6 if crs.isGeographic() else 2
+    if geo.xy:
+        xy_unit = "°" if crs.isGeographic() else QgsUnitTypes.toAbbreviatedString(units)
+        for axis in ("x", "y"):
+            columns.append(Column(f"{GEO_PREFIX}{axis}", tr(language, f"geo.col.{axis}"), "decimal", unit=xy_unit,
+                                  decimals=xy_decimals,
+                                  description=tr(language, f"geo.desc.{axis}", crs=authid)))
+    if geo.wgs84:
+        for axis in ("lat", "lon"):
+            columns.append(Column(f"{GEO_PREFIX}{axis}", tr(language, f"geo.col.{axis}"), "decimal", unit="°",
+                                  decimals=6, description=tr(language, f"geo.desc.{axis}")))
+    if geo.link:
+        columns.append(Column(f"{GEO_PREFIX}link", tr(language, "geo.col.link"), "link",
+                              description=tr(language, "geo.desc.link",
+                                             service=tr(language, f"geo.service.{geo.map}"))))
+    if not columns:
+        return None, []
+    # ponytail: nazwy „@…” zakładają, że pole warstwy tak się nie nazywa; przy kolizji porównanie wersji
+    # pomyli kolumny — dopisać zmianę nazwy, jeśli ktoś trafi na pole „@area_ha”.
+    plan = _GeoPlan(crs=QgsCoordinateReferenceSystem(crs), context=QgsCoordinateTransformContext(
+        QgsProject.instance().transformContext()), ellipsoid=ellipsoid,
+        planar_factor=QgsUnitTypes.fromUnitToUnitFactor(units, Qgis.DistanceUnit.Meters) if planar_ok else 1.0,
+        measure=measure, divisor=divisor, decimals=decimals, xy=geo.xy, xy_decimals=xy_decimals,
+        wgs84=geo.wgs84, link=geo.link, service=geo.map)
+    return plan, columns
 
 
 @dataclass
@@ -286,17 +439,21 @@ class PackagePlan:
     language: str
     key: Optional[str]
     expected: int  # przewidywana liczba obiektów — do paska postępu
+    geo: Optional[_GeoPlan] = None  # kolumny z geometrii dopisywane na końcu wiersza
 
     def read(self, progress: Optional[Callable[[float], None]] = None,
              canceled: Optional[Callable[[], bool]] = None) -> Package:
         """Odczyt obiektów (może działać w tle). `progress` dostaje 0–100."""
         rows: list[list[Value]] = []
         step = max(1, self.expected // 100)
+        geo_values = self.geo.calculator() if self.geo is not None else None
         for feature in self.source.getFeatures(self.request):
             row: list[Value] = []
             for index, convert in zip(self.indices, self.converters):
                 raw = feature.attribute(index)
                 row.append(convert(raw) if convert is not None else to_python(raw))
+            if geo_values is not None:
+                row += geo_values(feature.geometry() if feature.hasGeometry() else None)
             rows.append(row)
             if len(rows) > MAX_ROWS:
                 raise PackageError(tr(self.language, "error.too_many_rows", n=len(rows), limit=MAX_ROWS))
@@ -328,8 +485,14 @@ def plan_package(
     language: str = "pl",
     key: Optional[str] = None,
     personal: Optional[dict[str, str]] = None,
+    geo: Optional[GeoColumns] = None,
+    ellipsoid: str = "",
 ) -> PackagePlan:
-    """Plan paczki z warstwy (w wątku okna). `personal` — wynik `personal_data()`, jeśli już policzony."""
+    """Plan paczki z warstwy (w wątku okna). `personal` — wynik `personal_data()`, jeśli już policzony.
+
+    `geo` — kolumny z geometrii; `ellipsoid` — elipsoida z ustawień projektu (podaje wołający,
+    bo algorytm Processing może działać bez projektu).
+    """
     fields = layer.fields()
     personal = personal_data(layer) if personal is None else personal
     columns: list[Column] = []
@@ -363,7 +526,9 @@ def plan_package(
     if key is not None and key not in [c.name for c in columns]:
         key = None
 
-    request = _request(layer, scope, extent, extent_crs, indices)
+    geo_plan, geo_columns = _geo_plan(layer, geo or GeoColumns(), ellipsoid, language, notes)
+    columns += geo_columns
+    request = _request(layer, scope, extent, extent_crs, indices, geometry=geo_plan is not None)
     if scope == "selected" and layer.selectedFeatureCount() > MAX_ROWS:
         raise PackageError(tr(language, "error.too_many_rows", n=layer.selectedFeatureCount(), limit=MAX_ROWS))
     if scope == "all" and layer.featureCount() > MAX_ROWS:
@@ -393,4 +558,4 @@ def plan_package(
     ]
     expected = layer.selectedFeatureCount() if scope == "selected" else layer.featureCount()
     return PackagePlan(QgsVectorLayerFeatureSource(layer), request, indices, converters, columns, facts,
-                       notes, title or layer.name(), language, key, expected)
+                       notes, title or layer.name(), language, key, expected, geo_plan)
