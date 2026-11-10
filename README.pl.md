@@ -106,6 +106,13 @@ zapisany do połowy), więc każdemu uruchomieniu daj własną ścieżkę.
 go jako ten sam użytkownik systemu, który ustawiał okno. Bez tego profilu
 obowiązuje domyślny wygląd; kolumny i tak pochodzą z projektu.
 
+Okno zapisuje ustawienia warstwy (kolumny, nagłówki, jednostki, opisy,
+kolejność kolumn, decyzje o danych osobowych, kolumnę klucza, kolumny
+z geometrii) przy eksporcie i przy zmianie języka wtyczki. Zamknięcie okna
+bez eksportu porzuca te zmiany, więc algorytm dalej używa ustawień
+z ostatniego eksportu z okna. Potem zapisz projekt — to w nim są
+ustawienia warstwy.
+
 ## Wymagania i instalacja
 
 - QGIS 3.40–3.44 albo 4.x (sprawdzone: 3.40, 3.44.15, 4.2.3).

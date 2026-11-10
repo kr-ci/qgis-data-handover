@@ -108,6 +108,13 @@ each run its own output path.
 the same system user who set up the window. Without that profile the
 default look applies; columns still come from the project.
 
+The window saves the layer settings (columns, headers, units, descriptions,
+column order, personal data decisions, key column, columns from geometry)
+when you export, and when you switch the plugin language. Closing the
+window without exporting discards those changes, so the algorithm keeps
+using the settings of the last export from the window. Save the project
+afterwards — that is where the layer settings live.
+
 ## Requirements and installation
 
 - QGIS 3.40–3.44 or 4.x (tested: 3.40, 3.44.15, 4.2.3).
