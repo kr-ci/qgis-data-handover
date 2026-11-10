@@ -233,6 +233,8 @@
  "geo.service.geoportal": "Geoportal (폴란드 전용)",
  "note.link.dropped": "지도 링크 열을 제외했습니다: Excel은 시트당 최대 {limit}개의 하이퍼링크만 허용합니다.",
  "note.geo.measure_skipped": "면적과 길이를 제외했습니다: 레이어 좌표계({crs})에 타원체도 선형 단위도 없습니다.",
+ "note.geo.wgs_skipped": "위도/경도와 지도 링크를 제외했습니다: 레이어 좌표계({crs})가 없거나 WGS 84로 변환할 수 없습니다.",
+ "note.geo.failed": "지오메트리가 있는 객체 {n}개에 대해 지오메트리 열을 계산하지 못했습니다(잘못된 지오메트리 또는 좌표계 범위 밖). 해당 셀은 비어 있습니다.",
  "ui.geo.group": "지오메트리에서 만든 열 (표 끝에 추가)",
  "ui.geo.area": "면적",
  "ui.geo.length": "길이",

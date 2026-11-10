@@ -233,6 +233,8 @@
  "geo.service.geoportal": "Geoportal (apenas Polónia)",
  "note.link.dropped": "A coluna com a ligação para o mapa foi omitida: o Excel aceita no máximo {limit} hiperligações por folha.",
  "note.geo.measure_skipped": "A área e o comprimento foram omitidos: o sistema de coordenadas da camada ({crs}) não tem elipsoide nem unidades lineares.",
+ "note.geo.wgs_skipped": "A latitude/longitude e a ligação para o mapa foram omitidas: o sistema de coordenadas da camada ({crs}) não existe ou não pode ser convertido para WGS 84.",
+ "note.geo.failed": "Não foi possível calcular as colunas da geometria para {n} elementos com geometria (geometria inválida ou fora da área do sistema de coordenadas); as suas células estão vazias.",
  "ui.geo.group": "Colunas a partir da geometria (no fim da tabela)",
  "ui.geo.area": "Área",
  "ui.geo.length": "Comprimento",

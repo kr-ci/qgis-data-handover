@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
@@ -325,8 +327,13 @@ class _GeoPlan:
     link: bool
     service: str
 
-    def calculator(self) -> Callable[[Optional[QgsGeometry]], list[Value]]:
-        """Funkcja: geometria → wartości kolumn. Obiekty transformacji powstają w wątku wołającego."""
+    def calculator(self) -> tuple[Callable[[Optional[QgsGeometry]], list[Value]], list[int]]:
+        """Funkcja: geometria → wartości kolumn, i licznik obiektów, których nie udało się policzyć.
+
+        Obiekty transformacji powstają w wątku wołającego. Niepusta geometria, dla której
+        pomiar, punkt wewnętrzny albo WGS84 zawiodły, dostaje puste komórki i trafia do licznika
+        — autor dostaje uwagę, zamiast brać błąd obliczeń za brak geometrii.
+        """
         calc = QgsDistanceArea()
         calc.setSourceCrs(self.crs, self.context)
         if self.ellipsoid:
@@ -334,49 +341,88 @@ class _GeoPlan:
         to_wgs = QgsCoordinateTransform(self.crs, QgsCoordinateReferenceSystem(WGS84), self.context)
         need_wgs = self.wgs84 or self.link
         width = (1 if self.measure else 0) + 2 * self.xy + 2 * self.wgs84 + self.link
+        failed = [0]
+
+        def wgs84(xy: QgsPointXY) -> tuple[Optional[float], Optional[float]]:
+            try:
+                point = to_wgs.transform(xy)
+            except QgsCsException:
+                return None, None
+            lat, lon = point.y(), point.x()
+            if not (math.isfinite(lat) and math.isfinite(lon) and abs(lat) <= 90 and abs(lon) <= 180):
+                return None, None
+            return round(lat, 6), round(lon, 6)
 
         def values(geometry: Optional[QgsGeometry]) -> list[Value]:
             if geometry is None or geometry.isNull() or geometry.isEmpty():
                 return [None] * width
             out: list[Value] = []
+            ok = True
             if self.measure:
                 size = calc.measureArea(geometry) if self.measure == "area" else calc.measureLength(geometry)
                 factor = self.planar_factor ** (2 if self.measure == "area" else 1) if not self.ellipsoid else 1.0
-                out.append(round(size * factor / self.divisor, self.decimals))
+                ok = math.isfinite(size)
+                out.append(round(size * factor / self.divisor, self.decimals) if ok else None)
+            if width == len(out):
+                failed[0] += not ok
+                return out
             point = geometry.pointOnSurface()
             if point.isNull() or point.isEmpty():
+                failed[0] += 1
                 return out + [None] * (width - len(out))
             xy = point.asPoint()
             if self.xy:
                 out += [round(xy.x(), self.xy_decimals), round(xy.y(), self.xy_decimals)]
             if need_wgs:
-                try:
-                    wgs: Optional[QgsPointXY] = to_wgs.transform(QgsPointXY(xy))
-                except QgsCsException:
-                    wgs = None
-                lat = round(wgs.y(), 6) if wgs is not None else None
-                lon = round(wgs.x(), 6) if wgs is not None else None
+                lat, lon = wgs84(QgsPointXY(xy))
+                ok = ok and lat is not None
                 if self.wgs84:
                     out += [lat, lon]
                 if self.link:
                     out.append(map_url(self.service, lat, lon) if lat is not None and lon is not None else None)
+            failed[0] += not ok
             return out
 
-        return values
+        return values, failed
 
 
-def _geo_plan(layer: QgsVectorLayer, geo: GeoColumns, project_ellipsoid: str, language: str,
-              notes: list[str]) -> tuple[Optional[_GeoPlan], list[Column]]:
-    """Kolumny z geometrii i parametry ich liczenia (wątek okna). Uwagi dopisuje do `notes`."""
+def _crs_key(crs: QgsCoordinateReferenceSystem) -> str:
+    """Tożsamość układu w nazwie kolumny: kod EPSG itp., dla układu własnego — skrót definicji."""
+    authid = crs.authid()
+    if authid and not authid.upper().startswith("USER:"):
+        return authid
+    return "wkt-" + hashlib.sha1(crs.toWkt().encode("utf-8")).hexdigest()[:10]
+
+
+def _geo_plan(layer: QgsVectorLayer, geo: GeoColumns, project_ellipsoid: str, language: str, notes: list[str],
+              context: QgsCoordinateTransformContext, taken: set[str]) -> tuple[Optional[_GeoPlan], list[Column]]:
+    """Kolumny z geometrii i parametry ich liczenia (wątek okna). Uwagi dopisuje do `notes`.
+
+    Nazwa kolumny zawiera jednostkę i metodę (układ, elipsoidę): po zmianie metody porównanie
+    wersji pokaże kolumnę usuniętą i dodaną, a nie fałszywą zmianę każdego wiersza. `taken` —
+    nazwy już zajęte (pola warstwy); kolidująca nazwa dostaje numer.
+    """
     kind = geometry_kind(layer)
     if kind == "none" or not geo.any:
         return None, []
     crs = layer.crs()
-    authid = crs.authid() or crs.description()
-    ellipsoid = _ellipsoid(crs, project_ellipsoid)
+    authid = crs.authid() or crs.description() or "?"
+    crs_key = _crs_key(crs)
+    ellipsoid = _ellipsoid(crs, project_ellipsoid) if crs.isValid() else ""
     units = crs.mapUnits()
-    planar_ok = not crs.isGeographic() and units not in (Qgis.DistanceUnit.Degrees, Qgis.DistanceUnit.Unknown)
+    planar_ok = (crs.isValid() and not crs.isGeographic()
+                 and units not in (Qgis.DistanceUnit.Degrees, Qgis.DistanceUnit.Unknown))
+    to_wgs_ok = crs.isValid() and QgsCoordinateTransform(crs, QgsCoordinateReferenceSystem(WGS84), context).isValid()
     columns: list[Column] = []
+
+    def add(name: str, header: str, kind: str, **extra: Any) -> None:
+        unique, n = name, 1
+        while unique in taken:
+            n += 1
+            unique = f"{name}~{n}"
+        taken.add(unique)
+        columns.append(Column(unique, header, kind, **extra))
+
     measure = ""
     divisor, decimals = 1.0, 2
     if geo.measure and kind in ("polygon", "line"):
@@ -389,32 +435,36 @@ def _geo_plan(layer: QgsVectorLayer, geo: GeoColumns, project_ellipsoid: str, la
                                         "m": (1.0, 2, "m"), "km": (1000.0, 3, "km")}[unit]
             method = (tr(language, f"geo.desc.{measure}", ellipsoid=_ellipsoid_name(ellipsoid), crs=authid)
                       if ellipsoid else tr(language, f"geo.desc.{measure}.planar", crs=authid))
-            columns.append(Column(f"{GEO_PREFIX}{measure}_{unit}", tr(language, f"geo.col.{measure}"), "decimal",
-                                  unit=shown, description=method, decimals=decimals))
+            key = f"{crs_key}:{ellipsoid}" if ellipsoid else f"{crs_key}:plane"
+            add(f"{GEO_PREFIX}{measure}_{unit}:{key}", tr(language, f"geo.col.{measure}"), "decimal",
+                unit=shown, description=method, decimals=decimals)
     xy_decimals = 6 if crs.isGeographic() else 2
     if geo.xy:
-        xy_unit = "°" if crs.isGeographic() else QgsUnitTypes.toAbbreviatedString(units)
+        xy_unit = "°" if crs.isGeographic() else (
+            QgsUnitTypes.toAbbreviatedString(units) if units != Qgis.DistanceUnit.Unknown else "")
         for axis in ("x", "y"):
-            columns.append(Column(f"{GEO_PREFIX}{axis}", tr(language, f"geo.col.{axis}"), "decimal", unit=xy_unit,
-                                  decimals=xy_decimals,
-                                  description=tr(language, f"geo.desc.{axis}", crs=authid)))
-    if geo.wgs84:
+            add(f"{GEO_PREFIX}{axis}:{crs_key}", tr(language, f"geo.col.{axis}"), "decimal", unit=xy_unit,
+                decimals=xy_decimals, description=tr(language, f"geo.desc.{axis}", crs=authid))
+    wgs84 = geo.wgs84 and to_wgs_ok
+    link = geo.link and to_wgs_ok
+    if (geo.wgs84 or geo.link) and not to_wgs_ok:
+        # Nieważna transformacja zwraca punkt bez zmian: lokalne X/Y udawałyby stopnie WGS84.
+        notes.append(tr(language, "note.geo.wgs_skipped", crs=authid))
+    if wgs84:
         for axis in ("lat", "lon"):
-            columns.append(Column(f"{GEO_PREFIX}{axis}", tr(language, f"geo.col.{axis}"), "decimal", unit="°",
-                                  decimals=6, description=tr(language, f"geo.desc.{axis}")))
-    if geo.link:
-        columns.append(Column(f"{GEO_PREFIX}link", tr(language, "geo.col.link"), "link",
-                              description=tr(language, "geo.desc.link",
-                                             service=tr(language, f"geo.service.{geo.map}"))))
+            add(f"{GEO_PREFIX}{axis}", tr(language, f"geo.col.{axis}"), "decimal", unit="°",
+                decimals=6, description=tr(language, f"geo.desc.{axis}"))
+    if link:
+        add(f"{GEO_PREFIX}link", tr(language, "geo.col.link"), "link",
+            description=tr(language, "geo.desc.link", service=tr(language, f"geo.service.{geo.map}")))
     if not columns:
         return None, []
-    # ponytail: nazwy „@…” zakładają, że pole warstwy tak się nie nazywa; przy kolizji porównanie wersji
-    # pomyli kolumny — dopisać zmianę nazwy, jeśli ktoś trafi na pole „@area_ha”.
-    plan = _GeoPlan(crs=QgsCoordinateReferenceSystem(crs), context=QgsCoordinateTransformContext(
-        QgsProject.instance().transformContext()), ellipsoid=ellipsoid,
-        planar_factor=QgsUnitTypes.fromUnitToUnitFactor(units, Qgis.DistanceUnit.Meters) if planar_ok else 1.0,
-        measure=measure, divisor=divisor, decimals=decimals, xy=geo.xy, xy_decimals=xy_decimals,
-        wgs84=geo.wgs84, link=geo.link, service=geo.map)
+    plan = _GeoPlan(crs=QgsCoordinateReferenceSystem(crs), context=QgsCoordinateTransformContext(context),
+                    ellipsoid=ellipsoid,
+                    planar_factor=QgsUnitTypes.fromUnitToUnitFactor(units, Qgis.DistanceUnit.Meters)
+                    if planar_ok else 1.0,
+                    measure=measure, divisor=divisor, decimals=decimals, xy=geo.xy, xy_decimals=xy_decimals,
+                    wgs84=wgs84, link=link, service=geo.map)
     return plan, columns
 
 
@@ -446,7 +496,7 @@ class PackagePlan:
         """Odczyt obiektów (może działać w tle). `progress` dostaje 0–100."""
         rows: list[list[Value]] = []
         step = max(1, self.expected // 100)
-        geo_values = self.geo.calculator() if self.geo is not None else None
+        geo_values, geo_failed = self.geo.calculator() if self.geo is not None else (None, [0])
         for feature in self.source.getFeatures(self.request):
             row: list[Value] = []
             for index, convert in zip(self.indices, self.converters):
@@ -463,8 +513,9 @@ class PackagePlan:
                 if progress is not None:
                     progress(min(100.0, 100.0 * len(rows) / max(1, self.expected)))
         facts = [(k, str(len(rows)) if k == "count" else v) for k, v in self.facts]
+        notes = self.notes + ([tr(self.language, "note.geo.failed", n=geo_failed[0])] if geo_failed[0] else [])
         return Package(title=self.title, columns=self.columns, rows=rows, facts=facts,
-                       notes=self.notes, language=self.language, key=self.key)
+                       notes=notes, language=self.language, key=self.key)
 
 
 def build_package(layer: QgsVectorLayer, choices: list[FieldChoice], **kwargs: Any) -> Package:
@@ -487,11 +538,12 @@ def plan_package(
     personal: Optional[dict[str, str]] = None,
     geo: Optional[GeoColumns] = None,
     ellipsoid: str = "",
+    transform_context: Optional[QgsCoordinateTransformContext] = None,
 ) -> PackagePlan:
     """Plan paczki z warstwy (w wątku okna). `personal` — wynik `personal_data()`, jeśli już policzony.
 
-    `geo` — kolumny z geometrii; `ellipsoid` — elipsoida z ustawień projektu (podaje wołający,
-    bo algorytm Processing może działać bez projektu).
+    `geo` — kolumny z geometrii; `ellipsoid` i `transform_context` — z ustawień projektu albo
+    z kontekstu algorytmu Processing (domyślnie kontekst transformacji bieżącego projektu).
     """
     fields = layer.fields()
     personal = personal_data(layer) if personal is None else personal
@@ -526,7 +578,9 @@ def plan_package(
     if key is not None and key not in [c.name for c in columns]:
         key = None
 
-    geo_plan, geo_columns = _geo_plan(layer, geo or GeoColumns(), ellipsoid, language, notes)
+    context = transform_context if transform_context is not None else QgsProject.instance().transformContext()
+    geo_plan, geo_columns = _geo_plan(layer, geo or GeoColumns(), ellipsoid, language, notes, context,
+                                      set(fields.names()))
     columns += geo_columns
     request = _request(layer, scope, extent, extent_crs, indices, geometry=geo_plan is not None)
     if scope == "selected" and layer.selectedFeatureCount() > MAX_ROWS:

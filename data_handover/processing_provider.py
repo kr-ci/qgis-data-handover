@@ -138,7 +138,7 @@ class PackageAlgorithm(QgsProcessingAlgorithm):
             self.plan = layer_reader.plan_package(
                 layer, choices, scope=scope, author=str(settings.value(SETTINGS + "author", "") or "").strip(),
                 language=language, key=key, personal=personal, geo=geo,
-                ellipsoid=context.ellipsoid())
+                ellipsoid=context.ellipsoid(), transform_context=context.transformContext())
         except PackageError as exc:
             raise QgsProcessingException(str(exc)) from exc
         return True

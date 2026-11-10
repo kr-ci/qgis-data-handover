@@ -233,6 +233,8 @@
  "geo.service.geoportal": "Geoportal (Pologne uniquement)",
  "note.link.dropped": "La colonne de lien vers la carte a été omise : Excel accepte au plus {limit} liens hypertexte par feuille.",
  "note.geo.measure_skipped": "Surface et longueur omises : le système de coordonnées de la couche ({crs}) n’a ni ellipsoïde ni unités linéaires.",
+ "note.geo.wgs_skipped": "Latitude/longitude et lien vers la carte omis : le système de coordonnées de la couche ({crs}) est absent ou ne peut pas être converti en WGS 84.",
+ "note.geo.failed": "Les colonnes issues de la géométrie n’ont pas pu être calculées pour {n} entités avec géométrie (géométrie invalide ou hors de l’emprise du système de coordonnées) ; leurs cellules sont vides.",
  "ui.geo.group": "Colonnes issues de la géométrie (en fin de tableau)",
  "ui.geo.area": "Surface",
  "ui.geo.length": "Longueur",

@@ -233,6 +233,8 @@
  "geo.service.geoportal": "Geoportal (tylko Polska)",
  "note.link.dropped": "Pominięto kolumnę z linkiem do mapy: Excel przyjmuje najwyżej {limit} hiperłączy w arkuszu.",
  "note.geo.measure_skipped": "Pominięto powierzchnię i długość: układ współrzędnych warstwy ({crs}) nie ma elipsoidy ani jednostek liniowych.",
+ "note.geo.wgs_skipped": "Pominięto szerokość/długość geograficzną i link do mapy: układu współrzędnych warstwy ({crs}) brak albo nie da się go przeliczyć na WGS 84.",
+ "note.geo.failed": "Nie udało się policzyć kolumn z geometrii dla {n} obiektów z geometrią (niepoprawna geometria albo poza obszarem układu współrzędnych); ich komórki są puste.",
  "ui.geo.group": "Kolumny z geometrii (na końcu tabeli)",
  "ui.geo.area": "Powierzchnia",
  "ui.geo.length": "Długość",

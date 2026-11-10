@@ -233,6 +233,8 @@
  "geo.service.geoportal": "Geoportal（ポーランドのみ）",
  "note.link.dropped": "地図リンクの列を省きました：Excel では 1 シートあたり最大 {limit} 個のハイパーリンクしか使えません。",
  "note.geo.measure_skipped": "面積と長さを省きました：レイヤの座標系（{crs}）には楕円体も長さの単位もありません。",
+ "note.geo.wgs_skipped": "緯度/経度と地図リンクを省きました：レイヤの座標系（{crs}）がないか、WGS 84 に変換できません。",
+ "note.geo.failed": "ジオメトリを持つ {n} 個の地物について、ジオメトリの列を計算できませんでした（無効なジオメトリ、または座標系の範囲外）。それらのセルは空です。",
  "ui.geo.group": "ジオメトリから作る列（表の末尾）",
  "ui.geo.area": "面積",
  "ui.geo.length": "長さ",

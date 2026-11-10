@@ -304,7 +304,8 @@ def processing_algorithm(iface: object) -> None:
     check(result["OUTPUT"] == from_alg and workbook_cells(from_alg) == workbook_cells(from_window),
           "processing.run: plik identyczny z eksportem z okna (arkusze, wartości, wygląd)")
     meta = [r[1] for r in load_workbook(from_alg)["_handover"].iter_rows(values_only=True) if r[0] == "column"]
-    check(meta[-5:] == ["@x", "@y", "@lat", "@lon", "@link"], f"algorytm: kolumny geometrii z ustawień warstwy {meta}")
+    check([m.split(":")[0] for m in meta[-5:]] == ["@x", "@y", "@lat", "@lon", "@link"],
+          f"algorytm: kolumny geometrii z ustawień warstwy {meta}")
     data = load_workbook(from_alg)["Dane"]
     check(load_workbook(from_alg).sheetnames[:3] == ["Dane", "Słownik", "Metryka"] and not data.tables
           and data.cell(row=HEADER_ROW, column=1).fill.fgColor.rgb.endswith(THEMES["forest"].header_fill)
@@ -536,8 +537,9 @@ def geometry() -> None:
     pkg = layer_reader.build_package(layer, [FieldChoice("nr_dz")], geo=all_on, ellipsoid=project.ellipsoid(),
                                      personal={}, language="pl")
     names = [c.name for c in pkg.columns]
-    check(names == ["nr_dz", "@area_m2", "@x", "@y", "@lat", "@lon", "@link"], f"kolumny geometrii: {names}")
-    row = dict(zip(names, pkg.rows[0]))
+    check(names == ["nr_dz", "@area_m2:EPSG:2180:EPSG:7019", "@x:EPSG:2180", "@y:EPSG:2180", "@lat", "@lon", "@link"],
+          f"kolumny geometrii (jednostka i metoda w nazwie): {names}")
+    row = {n.split(":")[0]: v for n, v in zip(names, pkg.rows[0])}
     expected = qgis_measure(layer, "$area")
     check(abs(row["@area_m2"] - expected) <= 0.01, f"powierzchnia {row['@area_m2']} = $area {expected:.4f} (±0,01 m²)")
     planar = QgsGeometry.fromWkt(PARCEL).area()
@@ -550,7 +552,7 @@ def geometry() -> None:
     check(abs(row["@lat"] - wgs.y()) < 2e-6 and abs(row["@lon"] - wgs.x()) < 2e-6, "szerokość i długość WGS84")
     check(row["@link"] == map_url("geoportal", row["@lat"], row["@lon"]), "link do Geoportalu")
     check(all(v is None for v in pkg.rows[1][1:]), "obiekt bez geometrii: puste komórki")
-    area = {c.name: c for c in pkg.columns}["@area_m2"]
+    area = pkg.columns[1]
     check("EPSG:2180" in area.description and "ewidencyjn" in area.description and area.unit == "m²",
           f"opis metody: {area.description}")
 
@@ -561,7 +563,7 @@ def geometry() -> None:
     line = geo_layer("LineString", "EPSG:2180", ["LINESTRING(500000 480000, 500300 480400, 501000 480400)"])
     lpkg = layer_reader.build_package(line, [FieldChoice("nr_dz")], geo=GeoColumns(measure=True, length_unit="km"),
                                       ellipsoid=project.ellipsoid(), personal={})
-    check(lpkg.columns[1].name == "@length_km"
+    check(lpkg.columns[1].name.startswith("@length_km:")
           and abs(lpkg.rows[0][1] - round(qgis_measure(line, "$length") / 1000, 3)) < 1e-9, "długość linii = $length")
 
     # Projekt bez elipsoidy, warstwa w stopniach: elipsoida układu warstwy, nie stopnie kwadratowe.
@@ -599,6 +601,71 @@ def geometry() -> None:
                                         geo=GeoColumns(measure=True, xy=True, wgs84=True, link=True, map="geoportal"),
                                         ellipsoid=project.ellipsoid(), personal={}, language="pl", title="Działki")
     export(str(ROOT / "build" / f"przyklad_geometria_qgis{VERSION}.xlsx"), sample, Look(), Sheets(dictionary=True))
+
+    # Przegląd R7, zarzut 1: warstwa bez CRS — bez udawanych stopni WGS84 i linku, z uwagą.
+    nocrs = geo_layer("Polygon", "", [PARCEL])
+    npkg = layer_reader.build_package(nocrs, [FieldChoice("nr_dz")], geo=all_on, ellipsoid=project.ellipsoid(),
+                                      personal={}, language="pl")
+    nnames = [c.name.split(":")[0] for c in npkg.columns]
+    check(not nocrs.crs().isValid() and nnames == ["nr_dz", "@x", "@y"]
+          and tr("pl", "note.geo.wgs_skipped", crs="?") in npkg.notes
+          and tr("pl", "note.geo.measure_skipped", crs="?") in npkg.notes,
+          f"warstwa bez CRS: tylko X/Y, uwagi o pominięciu ({nnames})")
+
+    # Zarzut 2: kontekst transformacji z algorytmu, nie z globalnego projektu.
+    from qgis.core import QgsCoordinateTransformContext
+
+    custom = QgsCoordinateTransformContext()
+    operation = ("+proj=pipeline +step +inv +proj=tmerc +lat_0=0 +lon_0=19 +k=0.9993 +x_0=500000 "
+                 "+y_0=-5300000 +ellps=GRS80 +step +proj=unitconvert +xy_in=rad +xy_out=deg")
+    custom.addCoordinateOperation(layer.crs(), QgsCoordinateReferenceSystem("EPSG:4326"), operation)
+    cplan = layer_reader.plan_package(layer, [FieldChoice("nr_dz")], geo=GeoColumns(wgs84=True), personal={},
+                                      transform_context=custom)
+    check(cplan.geo.context.coordinateOperations() == custom.coordinateOperations()
+          and cplan.geo.context != project.transformContext(), "plan używa podanego kontekstu transformacji")
+
+    # Zarzut 3: zmiana układu warstwy to dla porównania inne kolumny, nie zmiana każdego wiersza.
+    to_2177 = QgsCoordinateTransform(layer.crs(), QgsCoordinateReferenceSystem("EPSG:2177"), project)
+    moved = QgsGeometry.fromWkt(PARCEL)
+    moved.transform(to_2177)
+    other = geo_layer("Polygon", "EPSG:2177", [moved.asWkt()])
+    xy = GeoColumns(measure=True, xy=True)
+    first = str(OUT / "r7_2180.xlsx")
+    export(first, layer_reader.build_package(layer, [FieldChoice("nr_dz")], geo=xy, key="nr_dz", personal={},
+                                             ellipsoid=project.ellipsoid(), language="pl"))
+    second = export(str(OUT / "r7_2177.xlsx"), layer_reader.build_package(
+        other, [FieldChoice("nr_dz")], geo=xy, key="nr_dz", personal={}, ellipsoid=project.ellipsoid(),
+        language="pl"), previous=first)
+    check(not [c for c in second.changes if c.kind == "modified"]
+          and any(n.startswith(tr("pl", "note.columns.added", names="")[:20]) for n in second.notes),
+          f"zmiana układu: kolumny dodane/usunięte, bez fałszywych zmian ({second.changes}, {second.notes})")
+
+    # Zarzut 4: pole warstwy o nazwie kolumny geometrii — nazwy unikalne, plik nadaje się do porównania.
+    from qgis.core import QgsField
+    from qgis.PyQt.QtCore import QMetaType
+
+    clash = geo_layer("Point", "EPSG:2180", ["POINT(500000 480000)"])
+    clash.dataProvider().addAttributes([QgsField("@lat", QMetaType.Type.QString)])
+    clash.updateFields()
+    cpkg = layer_reader.build_package(clash, [FieldChoice("nr_dz"), FieldChoice("@lat")], geo=GeoColumns(wgs84=True),
+                                      key="nr_dz", personal={}, language="pl")
+    cnames = [c.name for c in cpkg.columns]
+    v1 = str(OUT / "r7_kolizja.xlsx")
+    export(v1, cpkg)
+    again_pkg = layer_reader.build_package(clash, [FieldChoice("nr_dz"), FieldChoice("@lat")],
+                                           geo=GeoColumns(wgs84=True), key="nr_dz", personal={}, language="pl")
+    check(len(set(cnames)) == len(cnames) and "@lat~2" in cnames
+          and export(str(OUT / "r7_kolizja2.xlsx"), again_pkg, previous=v1).changes == [],
+          f"kolizja nazwy z polem warstwy: unikalne nazwy, ponowne porównanie działa ({cnames})")
+
+    # Zarzut 6: obiekt, którego nie da się przeliczyć, to uwaga z liczbą, nie cichy brak.
+    bad = geo_layer("Point", "EPSG:4326", ["POINT(10 95)", "POINT(21 52)"])
+    bpkg = layer_reader.build_package(bad, [FieldChoice("nr_dz")], geo=GeoColumns(wgs84=True, link=True),
+                                      personal={}, language="pl")
+    check(bpkg.rows[0][1:] == [None, None, None] and bpkg.rows[1][1] == 52.0
+          and tr("pl", "note.geo.failed", n=1) in bpkg.notes, "nieudane przeliczenie: puste komórki i uwaga z liczbą")
+    for gone in (nocrs, other, clash, bad):
+        project.removeMapLayer(gone.id())
 
     # Okno (wariant A): grupa pod listą pól, pomiar zależny od typu geometrii, zapis przy warstwie.
     layer_reader.save_choices(layer, [FieldChoice("nr_dz")], None, GeoColumns())

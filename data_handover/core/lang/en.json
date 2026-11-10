@@ -233,6 +233,8 @@
  "geo.service.geoportal": "Geoportal (Poland only)",
  "note.link.dropped": "The map link column was left out: Excel accepts at most {limit} hyperlinks per sheet.",
  "note.geo.measure_skipped": "Area and length were left out: the layer's coordinate system ({crs}) has neither an ellipsoid nor linear units.",
+ "note.geo.wgs_skipped": "Latitude/longitude and the map link were left out: the layer's coordinate system ({crs}) is missing or cannot be transformed to WGS 84.",
+ "note.geo.failed": "Geometry columns could not be calculated for {n} features with geometry (invalid geometry or outside the area of the coordinate system); their cells are empty.",
  "ui.geo.group": "Columns from geometry (at the end of the table)",
  "ui.geo.area": "Area",
  "ui.geo.length": "Length",

@@ -233,6 +233,8 @@
  "geo.service.geoportal": "Geoportal (nur Polen)",
  "note.link.dropped": "Die Spalte mit dem Kartenlink wurde weggelassen: Excel erlaubt höchstens {limit} Hyperlinks pro Tabellenblatt.",
  "note.geo.measure_skipped": "Fläche und Länge wurden weggelassen: Das Koordinatenbezugssystem des Layers ({crs}) hat weder ein Ellipsoid noch lineare Einheiten.",
+ "note.geo.wgs_skipped": "Breite/Länge und der Kartenlink wurden weggelassen: Das Koordinatenbezugssystem des Layers ({crs}) fehlt oder lässt sich nicht nach WGS 84 umrechnen.",
+ "note.geo.failed": "Für {n} Objekte mit Geometrie konnten die Geometriespalten nicht berechnet werden (ungültige Geometrie oder außerhalb des Gültigkeitsbereichs des Koordinatenbezugssystems); ihre Zellen sind leer.",
  "ui.geo.group": "Spalten aus der Geometrie (am Ende der Tabelle)",
  "ui.geo.area": "Fläche",
  "ui.geo.length": "Länge",

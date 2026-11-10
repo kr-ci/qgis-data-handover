@@ -233,6 +233,8 @@
  "geo.service.geoportal": "Geoportal（仅限波兰）",
  "note.link.dropped": "已省略地图链接列：Excel 每个工作表最多允许 {limit} 个超链接。",
  "note.geo.measure_skipped": "已省略面积和长度：图层坐标系（{crs}）既没有椭球体，也没有线性单位。",
+ "note.geo.wgs_skipped": "已省略纬度/经度和地图链接：图层坐标系（{crs}）缺失或无法转换为 WGS 84。",
+ "note.geo.failed": "有 {n} 个带几何的要素无法计算几何列（几何无效或超出坐标系范围）；其单元格为空。",
  "ui.geo.group": "来自几何的列（位于表格末尾）",
  "ui.geo.area": "面积",
  "ui.geo.length": "长度",
