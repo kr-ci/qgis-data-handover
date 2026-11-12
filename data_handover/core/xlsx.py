@@ -658,7 +658,7 @@ def _write_totals(
         letter = get_column_letter(c + 1)
         if summed[c]:
             if look.as_table and "\n" not in name:
-                cell.value = f"=SUBTOTAL(109,{TOTALS_TABLE}[{_structured(name)}])"
+                cell.value = f"=SUBTOTAL(109,{TOTALS_TABLE}[[{_structured(name)}]])"
             else:  # w zakresie albo przy nagłówku z nową linią: zwykły zakres A1
                 cell.value = f"=SUBTOTAL(109,{letter}{hr + 1}:{letter}{hr + count})"
             cell.number_format = formats[c]

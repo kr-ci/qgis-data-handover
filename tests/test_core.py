@@ -670,13 +670,13 @@ def test_totals_row_excel_table(tmp_path: Path) -> None:
     assert list(cols) == [c.value for c in ws[HEADER_ROW]]
     assert cols["Powierzchnia"].totalsRowFunction == "sum"
     assert cols["Nr działki"].totalsRowLabel == tr("pl", "totals.label")
-    assert ws.cell(row=HEADER_ROW + 3, column=3).value == "=SUBTOTAL(109,HandoverData[Powierzchnia])"
+    assert ws.cell(row=HEADER_ROW + 3, column=3).value == "=SUBTOTAL(109,HandoverData[[Powierzchnia]])"
 
 
 def test_totals_structured_reference_escapes(tmp_path: Path) -> None:
     assert xlsx._structured("Pow. [m²] #1 's") == "Pow. '[m²'] '#1 ''s"
     for header, expected in (
-        ("Pow. [m²] #1 's", "=SUBTOTAL(109,HandoverData[Pow. '[m²'] '#1 ''s])"),
+        ("Pow. [m²] #1 's", "=SUBTOTAL(109,HandoverData[[Pow. '[m²'] '#1 ''s]])"),
         ("Pow.\nm²", "=SUBTOTAL(109,C5:C6)"),
     ):
         pkg = _totals_pkg()
@@ -712,7 +712,7 @@ def test_totals_row_first_column_summed_has_no_label(tmp_path: Path) -> None:
     path = str(tmp_path / "a.xlsx")
     export(path, pkg, Look())
     ws = load_workbook(path)["Dane"]
-    assert ws.cell(row=HEADER_ROW + 3, column=1).value == "=SUBTOTAL(109,HandoverData[Liczba])"
+    assert ws.cell(row=HEADER_ROW + 3, column=1).value == "=SUBTOTAL(109,HandoverData[[Liczba]])"
     assert ws.tables["HandoverData"].tableColumns[0].totalsRowLabel is None
 
 
