@@ -242,5 +242,6 @@
  "ui.geo.wgs84": "Latitud/longitud WGS 84",
  "ui.geo.link": "Enlace «Ver en el mapa»",
  "ui.geo.hint": "Calculado como $area en el proyecto (elipsoide de la configuración del proyecto), en un punto dentro de cada objeto. La hoja «Diccionario» describe el método; la superficie geométrica no es la superficie catastral.",
- "ui.geo.none": "Esta capa no tiene geometría."
+ "ui.geo.none": "Esta capa no tiene geometría.",
+ "totals.label": "Total (filas visibles)"
 }

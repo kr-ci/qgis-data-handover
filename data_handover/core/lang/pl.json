@@ -242,5 +242,6 @@
  "ui.geo.wgs84": "Szer./dł. WGS 84",
  "ui.geo.link": "Link „Pokaż na mapie”",
  "ui.geo.hint": "Liczone jak $area w projekcie (elipsoida z ustawień projektu), z punktu wewnątrz obiektu. Arkusz „Słownik” opisuje metodę; powierzchnia geometryczna to nie powierzchnia ewidencyjna.",
- "ui.geo.none": "Ta warstwa nie ma geometrii."
+ "ui.geo.none": "Ta warstwa nie ma geometrii.",
+ "totals.label": "Razem (widoczne wiersze)"
 }

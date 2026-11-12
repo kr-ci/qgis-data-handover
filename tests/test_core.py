@@ -638,3 +638,94 @@ def test_summary_defaults_and_from_dict() -> None:
 def test_display_without_grouping() -> None:
     assert xlsx.display(2019, Column("rok", "Rok", "integer", grouping=False), "pl") == "2019"
     assert xlsx.display(2019, Column("rok", "Rok", "integer"), "pl") != "2019"
+
+
+# --- wiersz sum (R8, zadanie 2) ---------------------------------------------
+
+
+def _totals_pkg(**kw: object) -> Package:
+    pkg = parcels(summary=Summary(row=True), **kw)
+    next(c for c in pkg.columns if c.name == "pow_m2").summed = True
+    return pkg
+
+
+def test_totals_row_plain_range(tmp_path: Path) -> None:
+    path = str(tmp_path / "a.xlsx")
+    export(path, _totals_pkg(), Look(as_table=False))
+    ws = load_workbook(path)["Dane"]
+    assert ws.cell(row=HEADER_ROW + 3, column=3).value == "=SUBTOTAL(109,C5:C6)"
+    label = ws.cell(row=HEADER_ROW + 3, column=1)
+    assert label.value == tr("pl", "totals.label") and label.font.bold
+    assert ws.auto_filter.ref == "A4:G6"
+
+
+def test_totals_row_excel_table(tmp_path: Path) -> None:
+    path = str(tmp_path / "a.xlsx")
+    export(path, _totals_pkg(), Look())
+    ws = load_workbook(path)["Dane"]
+    table = ws.tables["HandoverData"]
+    assert table.ref == "A4:G7" and table.totalsRowCount == 1
+    assert table.autoFilter.ref == "A4:G6"
+    cols = {c.name: c for c in table.tableColumns}
+    assert list(cols) == [c.value for c in ws[HEADER_ROW]]
+    assert cols["Powierzchnia"].totalsRowFunction == "sum"
+    assert cols["Nr działki"].totalsRowLabel == tr("pl", "totals.label")
+    assert ws.cell(row=HEADER_ROW + 3, column=3).value == "=SUBTOTAL(109,HandoverData[Powierzchnia])"
+
+
+def test_totals_structured_reference_escapes(tmp_path: Path) -> None:
+    assert xlsx._structured("Pow. [m²] #1 's") == "Pow. '[m²'] '#1 ''s"
+    for header, expected in (
+        ("Pow. [m²] #1 's", "=SUBTOTAL(109,HandoverData[Pow. '[m²'] '#1 ''s])"),
+        ("Pow.\nm²", "=SUBTOTAL(109,C5:C6)"),
+    ):
+        pkg = _totals_pkg()
+        next(c for c in pkg.columns if c.name == "pow_m2").header = header
+        path = str(tmp_path / "a.xlsx")
+        export(path, pkg, Look())
+        assert load_workbook(path)["Dane"].cell(row=HEADER_ROW + 3, column=3).value == expected
+
+
+def test_no_totals_row_without_rows_or_summed_columns(tmp_path: Path) -> None:
+    cases = [
+        _totals_pkg(rows=[]),
+        parcels(summary=Summary(row=True)),  # żadna kolumna nie jest sumowana
+        parcels(),  # row=False
+    ]
+    next(c for c in cases[2].columns if c.name == "pow_m2").summed = True
+    for i, pkg in enumerate(cases):
+        path = str(tmp_path / f"{i}.xlsx")
+        export(path, pkg, Look())
+        wb = load_workbook(path)
+        ws = wb["Dane"]
+        assert not ws.tables["HandoverData"].totalsRowCount if ws.tables else True
+        assert all(
+            not (isinstance(c.value, str) and c.value.startswith("=")) for row in ws.iter_rows() for c in row
+        )
+        meta = {r[0].value: r[1].value for r in wb[META_SHEET].iter_rows() if r[0].value}
+        assert meta["totals_row"] == 0
+
+
+def test_totals_row_first_column_summed_has_no_label(tmp_path: Path) -> None:
+    pkg = parcels(summary=Summary(row=True), columns=[Column("n", "Liczba", "integer", summed=True)],
+                  rows=[[1], [2]], key=None)
+    path = str(tmp_path / "a.xlsx")
+    export(path, pkg, Look())
+    ws = load_workbook(path)["Dane"]
+    assert ws.cell(row=HEADER_ROW + 3, column=1).value == "=SUBTOTAL(109,HandoverData[Liczba])"
+    assert ws.tables["HandoverData"].tableColumns[0].totalsRowLabel is None
+
+
+def test_totals_row_survives_comparison(tmp_path: Path) -> None:
+    first = str(tmp_path / "v1.xlsx")
+    export(first, _totals_pkg(), Look())
+    assert len(read_snapshot(first).rows) == 2
+    rows = [["12/3", "0214011", 1.0, "usługi", dt.date(2024, 5, 3), None, True]]
+    result = export(str(tmp_path / "v2.xlsx"), _totals_pkg(rows=rows), Look(), previous=first)
+    assert {(c.kind, c.key) for c in result.changes} == {("modified", "12/3"), ("removed", "12/4")}
+    wb = load_workbook(first)
+    wb["Dane"].cell(row=HEADER_ROW + 4, column=1).value = "dopisek"
+    edited = str(tmp_path / "edited.xlsx")
+    wb.save(edited)
+    with pytest.raises(PackageError, match="zmieniono po eksporcie"):
+        export(str(tmp_path / "v3.xlsx"), _totals_pkg(), Look(), previous=edited)

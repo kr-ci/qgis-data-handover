@@ -242,5 +242,6 @@
  "ui.geo.wgs84": "Breite/Länge WGS 84",
  "ui.geo.link": "Link „Auf Karte zeigen“",
  "ui.geo.hint": "Berechnet wie $area im Projekt (Ellipsoid aus den Projekteinstellungen), an einem Punkt innerhalb jedes Objekts. Das Blatt „Wörterbuch“ beschreibt die Methode; die geometrische Fläche ist nicht die Katasterfläche.",
- "ui.geo.none": "Dieser Layer hat keine Geometrie."
+ "ui.geo.none": "Dieser Layer hat keine Geometrie.",
+ "totals.label": "Summe (sichtbare Zeilen)"
 }

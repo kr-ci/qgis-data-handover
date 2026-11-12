@@ -242,5 +242,6 @@
  "ui.geo.wgs84": "Latitude/longitude WGS 84",
  "ui.geo.link": "Lien « Afficher sur la carte »",
  "ui.geo.hint": "Calculé comme $area dans le projet (ellipsoïde des propriétés du projet), en un point situé à l’intérieur de chaque entité. La feuille « Dictionnaire » décrit la méthode ; la surface géométrique n’est pas la contenance cadastrale.",
- "ui.geo.none": "Cette couche n’a pas de géométrie."
+ "ui.geo.none": "Cette couche n’a pas de géométrie.",
+ "totals.label": "Total (lignes visibles)"
 }

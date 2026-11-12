@@ -242,5 +242,6 @@
  "ui.geo.wgs84": "Latitude/longitude WGS 84",
  "ui.geo.link": "“Show on map” link",
  "ui.geo.hint": "Calculated like $area in the project (ellipsoid from the project settings), from a point inside each feature. The “Dictionary” sheet describes the method; geometric area is not the cadastral area.",
- "ui.geo.none": "This layer has no geometry."
+ "ui.geo.none": "This layer has no geometry.",
+ "totals.label": "Total (visible rows)"
 }

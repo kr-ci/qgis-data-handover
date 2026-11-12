@@ -23,8 +23,9 @@ from openpyxl.comments import Comment
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.filters import AutoFilter
 from openpyxl.worksheet.properties import PageSetupProperties
-from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.worksheet.table import Table, TableColumn, TableStyleInfo
 from openpyxl.worksheet.worksheet import Worksheet
 
 from . import diff, privacy
@@ -39,6 +40,7 @@ EXACT_INT_LIMIT = 10**15
 YEAR_RANGE = (1000, 2100)  # liczby z tego zakresu w polu całkowitym uznajemy za rok
 WIDTH_SAMPLE = 300
 # Excel przyjmuje najwyżej 65 530 hiperłączy w arkuszu; plik z większą liczbą uznaje za uszkodzony.
+TOTALS_TABLE = "HandoverData"  # nazwa tabeli Excela w arkuszu „Dane”
 HYPERLINK_LIMIT = 65_530
 LINK_COLOR = "0563C1"  # kolor zwykłego hiperłącza w Excelu
 
@@ -220,19 +222,20 @@ def read_snapshot(path: str) -> Snapshot:
             raise NotHandoverFileError(name)
         header_row = int(meta["header_row"])
         count = int(meta["rows"])
+        extra = 1 if meta.get("totals_row") == "1" else 0  # wiersz sum pod danymi
         width = len(columns)
         found = [
             list(values) + [None] * (width + 1 - len(values))
             for values in wb[meta["data_sheet"]].iter_rows(
-                min_row=header_row, max_row=header_row + count + 1, max_col=width + 1, values_only=True
+                min_row=header_row, max_row=header_row + count + 1 + extra, max_col=width + 1, values_only=True
             )
         ]
-        found += [[None] * (width + 1)] * (count + 2 - len(found))
+        found += [[None] * (width + 1)] * (count + 2 + extra - len(found))
         # Ręczne zmiany po eksporcie (przestawione lub dopisane kolumny, dopisane
         # lub usunięte wiersze) dałyby cicho błędny raport — odrzucamy taki plik.
         edited = found[0] != [headers[c] for c in columns] + [None]
         edited |= any(all(v is None for v in row[:width]) for row in found[1 : count + 1])
-        edited |= bool(count) and any(v is not None for v in found[count + 1])
+        edited |= bool(count) and any(v is not None for v in found[count + 1 + extra])
         if edited:
             raise EditedFileError(name)
         rows = [cast(list[Value], row[:width]) for row in found[1 : count + 1]]
@@ -339,7 +342,8 @@ def export(
         _write_about(wb.create_sheet(), pkg, look, sheets, notes, snapshot)
     if changes is not None and snapshot is not None:
         _write_changes(wb.create_sheet(), pkg, look, changes, snapshot)
-    _write_meta(wb.create_sheet(META_SHEET), pkg, len(rows), look.header_row)
+    totals = bool(pkg.summary.row and rows and any(c.summed and not c.masked for c in pkg.columns))
+    _write_meta(wb.create_sheet(META_SHEET), pkg, len(rows), look.header_row, totals)
     wb.properties.title = _clean(pkg.title)
     wb.properties.creator = "Data Handover (QGIS)"
     _save(wb, path, canceled)
@@ -492,14 +496,38 @@ def _header_row(ws: Worksheet, row: int, headers: Sequence[str], look: Look, bor
             cell.fill = fill
 
 
+def _structured(name: str) -> str:
+    """Nazwa kolumny w odwołaniu strukturalnym: znaki specjalne poprzedza `'`."""
+    return "".join(f"'{ch}" if ch in "[]#'" else ch for ch in name)
+
+
 def _grid(ws: Worksheet, look: Look, header_row: int, cols: int, rows: int, table_name: str,
-          stripes: bool = True) -> None:
-    """Tabela Excela albo zwykły zakres z filtrami, plus pasy wierszy."""
+          stripes: bool = True, headers: Sequence[str] = (), totals: Optional[Sequence[bool]] = None,
+          label: str = "") -> None:
+    """Tabela Excela albo zwykły zakres z filtrami, plus pasy wierszy.
+
+    `totals` (flaga „sumowana” dla każdej kolumny) oznacza, że pod danymi jest wiersz sum:
+    wchodzi do tabeli, ale filtr go nie obejmuje.
+    """
     if not rows:
         return
-    ref = f"A{header_row}:{get_column_letter(cols)}{header_row + rows}"
+    last = f"{get_column_letter(cols)}{header_row + rows}"
+    ref = f"A{header_row}:{last}"
     if look.as_table:
         table = Table(displayName=table_name, ref=ref)
+        if totals is not None:
+            table.ref = f"A{header_row}:{get_column_letter(cols)}{header_row + rows + 1}"
+            table.totalsRowCount = 1
+            table.autoFilter = AutoFilter(ref=ref)
+            # Własne kolumny: openpyxl sam ich nie opisze wiersza sum.
+            table.tableColumns = [
+                TableColumn(
+                    id=i, name=headers[i - 1],
+                    totalsRowFunction="sum" if totals[i - 1] else None,
+                    totalsRowLabel=label if i == 1 and not totals[0] else None,
+                )
+                for i in range(1, cols + 1)
+            ]
         # Styl tabeli „Brak”: cały wygląd pochodzi z ustawień użytkownika.
         table.tableStyleInfo = TableStyleInfo(name=None, showRowStripes=False)
         ws.add_table(table)
@@ -553,7 +581,9 @@ def _write_data(
             subtitle += tr(lang, "data.subtitle.about", name=tr(lang, "sheet.about"))
         _title(ws, pkg.title, subtitle, look)
     headers = _unique_headers(pkg.columns)
-    borders = _Borders(look, len(rows) + 1, len(headers))
+    summed = [c.summed and not c.masked for c in pkg.columns]
+    totals = bool(pkg.summary.row and rows and any(summed))
+    borders = _Borders(look, len(rows) + 1 + totals, len(headers))
     _header_row(ws, hr, headers, look, borders)
 
     style = look.body
@@ -586,6 +616,10 @@ def _write_data(
             if fill is not None:
                 cell.fill = fill
 
+    label = tr(lang, "totals.label")
+    if totals:
+        _write_totals(ws, look, hr, headers, summed, label, formats, aligns, borders, len(rows))
+
     if look.header_comments:
         for i, col in enumerate(pkg.columns, start=1):
             tip = _header_tip(col)
@@ -599,12 +633,40 @@ def _write_data(
         ws.cell(row=hr + 1, column=1).font = Font(name=style.font, italic=True, color=GREY_TEXT)
     if changes:
         _highlight(ws, pkg, rows, changes, hr)  # przed pasami: wyższe pierwszeństwo
-    _grid(ws, look, hr, len(headers), len(rows), "HandoverData")
+    _grid(ws, look, hr, len(headers), len(rows), TOTALS_TABLE,
+          headers=headers, totals=summed if totals else None, label=label)
 
-    _fit_columns(ws, pkg.columns, headers, rows, lang, look, hr)
+    # Etykieta wiersza sum też ma się zmieścić w pierwszej kolumnie.
+    sized = rows + [[label] + [None] * (len(headers) - 1)] if totals and not summed[0] else rows
+    _fit_columns(ws, pkg.columns, headers, sized, lang, look, hr)
     ws.sheet_view.showGridLines = look.gridlines
     _sheet_basics(ws, look, hr)
     _page_setup(ws, pkg.title, lang, hr, look.landscape)
+
+
+def _write_totals(
+    ws: Worksheet, look: Look, hr: int, headers: Sequence[str], summed: Sequence[bool], label: str,
+    formats: Sequence[str], aligns: Sequence[Alignment], borders: _Borders, count: int,
+) -> None:
+    """Wiersz sum tuż pod danymi: SUBTOTAL(109) liczy tylko wiersze widoczne po filtrze."""
+    r = count + 1
+    font = _font(look.body, bold=True)
+    fill = _solid(look.stripe_color)
+    edge = Side(style="medium", color=look.title_color)
+    for c, name in enumerate(headers):
+        cell = ws.cell(row=hr + r, column=c + 1)
+        letter = get_column_letter(c + 1)
+        if summed[c]:
+            if look.as_table and "\n" not in name:
+                cell.value = f"=SUBTOTAL(109,{TOTALS_TABLE}[{_structured(name)}])"
+            else:  # w zakresie albo przy nagłówku z nową linią: zwykły zakres A1
+                cell.value = f"=SUBTOTAL(109,{letter}{hr + 1}:{letter}{hr + count})"
+            cell.number_format = formats[c]
+        elif c == 0:
+            _set_text(cell, label)
+        base = borders.at(r, c)
+        cell.border = Border(top=edge, bottom=base.bottom, left=base.left, right=base.right)
+        cell.font, cell.fill, cell.alignment = font, fill, aligns[c]
 
 
 def _header_tip(col: Column) -> str:
@@ -836,13 +898,14 @@ def _snapshot_date(snapshot: Snapshot, lang: str) -> str:
         return snapshot.exported_at
 
 
-def _write_meta(ws: Worksheet, pkg: Package, count: int, header_row: int) -> None:
+def _write_meta(ws: Worksheet, pkg: Package, count: int, header_row: int, totals: bool = False) -> None:
     """Ukryty arkusz techniczny: pozwala następnym razem porównać wersje."""
     rows: list[tuple[Value, ...]] = [
         ("format", FORMAT_VERSION),
         ("data_sheet", tr(pkg.language, "sheet.data")),
         ("header_row", header_row),
         ("rows", count),
+        ("totals_row", int(totals)),
         ("key", pkg.key or ""),
         ("exported_at", pkg.exported_at.isoformat()),
         ("language", pkg.language),
