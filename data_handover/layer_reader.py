@@ -8,6 +8,7 @@ import json
 import math
 import re
 from dataclasses import dataclass
+from dataclasses import field as dc_field
 from typing import Any, Callable, Optional
 
 from qgis.core import (
@@ -33,7 +34,18 @@ from qgis.PyQt.QtCore import QDate, QDateTime, QMetaType, QTime
 
 from .core import privacy
 from .core.i18n import tr
-from .core.model import GEO_PREFIX, MAX_ROWS, Column, GeoColumns, Package, Value, from_dict, map_url, to_dict
+from .core.model import (
+    GEO_PREFIX,
+    MAX_ROWS,
+    Column,
+    GeoColumns,
+    Package,
+    Summary,
+    Value,
+    from_dict,
+    map_url,
+    to_dict,
+)
 from .core.xlsx import CanceledError, PackageError
 
 # Kody typów są wspólne dla QVariant.Type (Qt5) i QMetaType.Type (Qt6).
@@ -58,6 +70,7 @@ class FieldChoice:
     unit: str = ""
     description: str = ""
     protect: str = ""  # "" | "mask" | "keep" — tylko dla pól z danymi osobowymi
+    sum: Optional[bool] = None  # None = reguła domyślna (pole dziesiętne jest sumowane)
 
 
 def type_code(field: QgsField) -> int:
@@ -75,6 +88,12 @@ def is_identifier(layer: QgsVectorLayer, index: int) -> bool:
         return True
     tokens = [t for t in re.split(r"[\W_]+", field.name().lower()) if t]
     return field_kind(field) in ("integer", "text") and any(t in _ID_TOKENS for t in tokens)
+
+
+def summable(column: Column) -> bool:
+    """Czy kolumnę wolno sumować: liczba, nie identyfikator, nie maska, nie etykieta, nie kolumna z geometrii."""
+    return (column.kind in ("integer", "decimal") and not column.is_identifier and not column.masked
+            and not column.represented and not column.name.startswith(GEO_PREFIX))
 
 
 def to_python(value: Any) -> Value:
@@ -119,9 +138,9 @@ def load_choices(layer: QgsVectorLayer) -> dict[str, dict[str, Any]]:
     return data if isinstance(data, dict) else {}
 
 
-def saved_choices(layer: QgsVectorLayer,
-                  personal: dict[str, str]) -> tuple[list[FieldChoice], Optional[str], GeoColumns]:
-    """Ustawienia pól, klucz i kolumny z geometrii tak, jak okno pokazuje je po otwarciu.
+def saved_choices(layer: QgsVectorLayer, personal: dict[str, str]
+                  ) -> tuple[list[FieldChoice], Optional[str], GeoColumns, Summary]:
+    """Ustawienia pól, klucz, kolumny z geometrii i podsumowanie tak, jak okno pokazuje je po otwarciu.
 
     Pole bez zapisanych ustawień: eksportowane, chyba że wygląda na dane
     osobowe; pole osobowe eksportowane jawnie — domyślnie maskowane.
@@ -143,21 +162,28 @@ def saved_choices(layer: QgsVectorLayer,
             unit=str(info.get("unit") or "").strip(),
             description=str(info.get("description") or "").strip(),
             protect=str(info.get("protect") or "mask") if name in personal else "",
+            sum=info["sum"] if isinstance(info.get("sum"), bool) else None,
         ))
-    return choices, str(saved.get("key") or "") or None, from_dict(GeoColumns, saved.get("geometry"))
+    return (choices, str(saved.get("key") or "") or None, from_dict(GeoColumns, saved.get("geometry")),
+            from_dict(Summary, saved.get("summary")))
 
 
 def save_choices(layer: QgsVectorLayer, choices: list[FieldChoice], key: Optional[str],
-                 geo: Optional[GeoColumns] = None) -> None:
-    """Zapis ustawień warstwy w projekcie; bez `geo` zapisane kolumny z geometrii zostają."""
+                 geo: Optional[GeoColumns] = None, summary: Optional[Summary] = None) -> None:
+    """Zapis ustawień warstwy w projekcie; bez `geo` i `summary` zapisane wartości zostają."""
+    saved = load_choices(layer)
     if geo is None:
-        geo = from_dict(GeoColumns, load_choices(layer).get("geometry"))
+        geo = from_dict(GeoColumns, saved.get("geometry"))
+    if summary is None:
+        summary = from_dict(Summary, saved.get("summary"))
     data = {
         "order": [c.name for c in choices],
         "key": key or "",
         "fields": {c.name: {"export": c.export, "header": c.header, "unit": c.unit,
-                            "description": c.description, "protect": c.protect} for c in choices},
+                            "description": c.description, "protect": c.protect,
+                            **({"sum": c.sum} if c.sum is not None else {})} for c in choices},
         "geometry": to_dict(geo),
+        "summary": to_dict(summary),
     }
     layer.setCustomProperty(PROPERTY, json.dumps(data, ensure_ascii=False))
 
@@ -490,6 +516,7 @@ class PackagePlan:
     key: Optional[str]
     expected: int  # przewidywana liczba obiektów — do paska postępu
     geo: Optional[_GeoPlan] = None  # kolumny z geometrii dopisywane na końcu wiersza
+    summary: Summary = dc_field(default_factory=Summary)
 
     def read(self, progress: Optional[Callable[[float], None]] = None,
              canceled: Optional[Callable[[], bool]] = None) -> Package:
@@ -515,7 +542,7 @@ class PackagePlan:
         facts = [(k, str(len(rows)) if k == "count" else v) for k, v in self.facts]
         notes = self.notes + ([tr(self.language, "note.geo.failed", n=geo_failed[0])] if geo_failed[0] else [])
         return Package(title=self.title, columns=self.columns, rows=rows, facts=facts,
-                       notes=notes, language=self.language, key=self.key)
+                       notes=notes, language=self.language, key=self.key, summary=self.summary)
 
 
 def build_package(layer: QgsVectorLayer, choices: list[FieldChoice], **kwargs: Any) -> Package:
@@ -539,6 +566,7 @@ def plan_package(
     geo: Optional[GeoColumns] = None,
     ellipsoid: str = "",
     transform_context: Optional[QgsCoordinateTransformContext] = None,
+    summary: Optional[Summary] = None,
 ) -> PackagePlan:
     """Plan paczki z warstwy (w wątku okna). `personal` — wynik `personal_data()`, jeśli już policzony.
 
@@ -571,6 +599,7 @@ def plan_package(
         if masked:
             column.kind = "text"
             column.is_identifier = False
+        column.summed = summable(column) and (choice.sum if choice.sum is not None else column.kind == "decimal")
         columns.append(column)
         indices.append(index)
         converters.append(representer(layer, index, stand_in))
@@ -581,6 +610,9 @@ def plan_package(
     context = transform_context if transform_context is not None else QgsProject.instance().transformContext()
     geo_plan, geo_columns = _geo_plan(layer, geo or GeoColumns(), ellipsoid, language, notes, context,
                                       set(fields.names()))
+    summary = summary if summary is not None else Summary()
+    for column in geo_columns:
+        column.summed = summary.measure and column.name.startswith((f"{GEO_PREFIX}area_", f"{GEO_PREFIX}length_"))
     columns += geo_columns
     request = _request(layer, scope, extent, extent_crs, indices, geometry=geo_plan is not None)
     if scope == "selected" and layer.selectedFeatureCount() > MAX_ROWS:
@@ -612,4 +644,4 @@ def plan_package(
     ]
     expected = layer.selectedFeatureCount() if scope == "selected" else layer.featureCount()
     return PackagePlan(QgsVectorLayerFeatureSource(layer), request, indices, converters, columns, facts,
-                       notes, title or layer.name(), language, key, expected, geo_plan)
+                       notes, title or layer.name(), language, key, expected, geo_plan, summary)

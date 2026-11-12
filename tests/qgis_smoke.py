@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import glob
 import json
+import math
 import os
 import subprocess
 import sys
@@ -24,9 +25,11 @@ sys.path.append("/usr/share/qgis/python/plugins")  # moduł processing
 
 from qgis.core import (  # noqa: E402
     Qgis,
+    QgsAggregateCalculator,
     QgsApplication,
     QgsEditorWidgetSetup,
     QgsFeature,
+    QgsField,
     QgsGeometry,
     QgsPointXY,
     QgsProcessingAlgRunnerTask,
@@ -38,7 +41,7 @@ from qgis.core import (  # noqa: E402
     QgsVectorFileWriter,
     QgsVectorLayer,
 )
-from qgis.PyQt.QtCore import QDate, QSettings, QTimer  # noqa: E402
+from qgis.PyQt.QtCore import QDate, QMetaType, QSettings, QTimer  # noqa: E402
 from qgis.PyQt.QtWidgets import QApplication  # noqa: E402
 from qgis.testing import start_app  # noqa: E402
 
@@ -54,6 +57,7 @@ from data_handover.core.model import (  # noqa: E402
     GeoColumns,
     Look,
     Sheets,
+    Summary,
     look_with_theme,
     map_url,
     to_dict,
@@ -506,7 +510,7 @@ def geo_layer(wkt_type: str, crs: str, geometries: list[str | None]) -> QgsVecto
     return layer
 
 
-def qgis_measure(layer: QgsVectorLayer, expression: str) -> float:
+def qgis_measure(layer: QgsVectorLayer, expression: str, feature: QgsFeature | None = None) -> float:
     """Wartość `$area`/`$length` tak, jak liczy ją kalkulator pól QGIS (elipsoida i jednostki projektu)."""
     from qgis.core import QgsDistanceArea, QgsExpression, QgsExpressionContext, QgsExpressionContextUtils
 
@@ -519,7 +523,7 @@ def qgis_measure(layer: QgsVectorLayer, expression: str) -> float:
     exp.setDistanceUnits(project.distanceUnits())
     exp.setAreaUnits(project.areaUnits())
     context = QgsExpressionContext(QgsExpressionContextUtils.globalProjectLayerScopes(layer))
-    context.setFeature(next(layer.getFeatures()))
+    context.setFeature(feature if feature is not None else next(layer.getFeatures()))
     return float(exp.evaluate(context))
 
 
@@ -583,7 +587,7 @@ def geometry() -> None:
     # Ustawienia geometrii zapisane przy warstwie; zapis samych pól ich nie kasuje.
     layer_reader.save_choices(layer, [FieldChoice("nr_dz")], None, all_on)
     layer_reader.save_choices(layer, [FieldChoice("nr_dz", header="Nr")], None)
-    choices, _, geo = layer_reader.saved_choices(layer, {})
+    choices, _, geo, _ = layer_reader.saved_choices(layer, {})
     check(geo == all_on and choices[0].header == "Nr", "ustawienia geometrii przy warstwie przeżywają zapis pól")
 
     # W tle (QgsTask) te same wartości co w wątku okna.
@@ -704,6 +708,125 @@ def geometry() -> None:
     QgsSettings().remove(UI_LANGUAGE)
     for name in (layer, line, degrees, table):
         project.removeMapLayer(name.id())
+
+
+def labelled(path: str, sheet: str, label: str) -> object:
+    """Wartość z komórki obok pierwszej komórki o treści `label` (para etykieta–wartość)."""
+    for row in load_workbook(path)[sheet].iter_rows():
+        for i, c in enumerate(row[:-1]):
+            if c.value == label:
+                return row[i + 1].value
+    raise AssertionError(f"brak etykiety „{label}” w arkuszu {sheet}")
+
+
+def summaries(iface: object) -> None:
+    """R8: które kolumny są sumowane, sumy w „Podsumowaniu” zgodne z QGIS, zapis ustawień, Processing."""
+    import processing  # noqa: E402
+    from qgis.core import QgsCoordinateReferenceSystem
+
+    project = QgsProject.instance()
+    project.setCrs(QgsCoordinateReferenceSystem("EPSG:2180"))
+    project.setEllipsoid("EPSG:7019")
+    plugin = classFactory(iface)
+    plugin.initGui()
+
+    # Warstwa z make_layer() + pole dziesiętne i pole „rok” (całkowite).
+    layer = make_layer()
+    layer.dataProvider().addAttributes([QgsField("wartosc", QMetaType.Type.Double),
+                                        QgsField("rok", QMetaType.Type.Int)])
+    layer.updateFields()
+    layer.startEditing()
+    for feature, (value, year) in zip(layer.getFeatures(), [(10.5, 2019), (20.25, 2020), (None, 2021)]):
+        layer.changeAttributeValue(feature.id(), layer.fields().indexOf("wartosc"), value)
+        layer.changeAttributeValue(feature.id(), layer.fields().indexOf("rok"), year)
+    layer.commitChanges()
+    personal = layer_reader.personal_data(layer)
+    choices = [FieldChoice(n, export=n != "nazwisko", protect="mask" if n == "nr_ident" else "")
+               for n in layer.fields().names()]
+    plan = layer_reader.plan_package(layer, choices, personal=personal, language="pl",
+                                     summary=Summary(sheet=True, row=True, group_by="teryt"))
+    by_name = {c.name: c for c in plan.columns}
+    check(plan.summary == Summary(sheet=True, row=True, group_by="teryt"), "plan niesie ustawienia podsumowania")
+    check(by_name["pow_m2"].summed and by_name["wartosc"].summed, "pola dziesiętne domyślnie sumowane")
+    check(not by_name["rok"].summed, "pole całkowite domyślnie nie jest sumowane")
+    check(not by_name["nr_dz"].summed and not by_name["fid"].summed and not by_name["teryt"].summed,
+          "identyfikatory nie są sumowane")
+    check(not by_name["nr_ident"].summed and not by_name["przezn"].summed and not by_name["uwagi"].summed,
+          "kolumny maskowane, z etykietami i tekstowe nie są sumowane")
+    forcing = ("rok", "nr_ident", "przezn", "fid")
+    on = [FieldChoice(c.name, export=c.export, protect=c.protect, sum=True if c.name in forcing else None)
+          for c in choices]
+    forced = {c.name: c for c in layer_reader.plan_package(layer, on, personal=personal).columns}
+    check(forced["rok"].summed and not forced["nr_ident"].summed and not forced["przezn"].summed
+          and not forced["fid"].summed, "sum=True włącza liczbowe, ale nie identyfikator, maskę ani etykiety")
+    off = [FieldChoice(c.name, export=c.export, protect=c.protect, sum=False if c.name == "pow_m2" else None)
+           for c in choices]
+    check(not {c.name: c for c in layer_reader.plan_package(layer, off, personal=personal).columns}[
+          "pow_m2"].summed, "sum=False wyłącza pole dziesiętne")
+
+    path = str(OUT / "r8_podsumowanie.xlsx")
+    export(path, plan.read(), Look(), Sheets())
+    sheet = tr("pl", "sheet.summary")
+    total = labelled(path, sheet, tr("pl", "summary.sum", header="Powierzchnia"))
+    expected = layer.aggregate(QgsAggregateCalculator.Aggregate.Sum, "pow_m2")[0]
+    check(isinstance(total, float) and math.isclose(total, expected, rel_tol=1e-12),
+          f"suma pow_m2 w „Podsumowaniu” {total} == aggregate(Sum) {expected}")
+    params = QgsAggregateCalculator.AggregateParameters()
+    params.filter = "\"teryt\" = '0214011'"
+    in_group = layer.aggregate(QgsAggregateCalculator.Aggregate.Count, "fid", params)[0]
+    check(labelled(path, sheet, "0214011") == in_group == 2, f"liczba w grupie 0214011 == aggregate(Count) {in_group}")
+    check(labelled(path, sheet, tr("pl", "summary.count")) == layer.featureCount(), "liczba obiektów w całości")
+
+    # Zapis i odczyt ustawień.
+    settings = Summary(sheet=True, row=True, group_by="teryt", measure=False)
+    layer_reader.save_choices(layer, [FieldChoice("pow_m2", sum=True), FieldChoice("rok")], None, summary=settings)
+    saved = layer_reader.saved_choices(layer, {})
+    check(saved[3] == settings, "Summary zapisane przy warstwie i odczytane")
+    check({c.name: c.sum for c in saved[0] if c.name in ("pow_m2", "rok")} == {"pow_m2": True, "rok": None},
+          "„sum” przeżywa zapis; brak wyboru = None")
+    layer_reader.save_choices(layer, [FieldChoice("pow_m2", sum=True)], None)
+    check(layer_reader.saved_choices(layer, {})[3] == settings, "zapis bez summary go nie kasuje")
+    check(layer_reader.load_choices(layer)["fields"]["pow_m2"]["sum"] is True, "w JSON „sum”: true")
+    layer_reader.save_choices(layer, [FieldChoice("rok")], None)
+    check("sum" not in layer_reader.load_choices(layer)["fields"]["rok"], "w JSON brak klucza „sum” bez wyboru")
+    check(layer_reader.saved_choices(make_layer(), {})[3] == Summary(), "bez zapisu: domyślne Summary")
+
+    # Geometria: pomiar sumowany jak widać w komórkach (zaokrąglone wartości).
+    shifted = PARCEL.replace("500000", "510000").replace("500120", "510100").replace("500040", "510030")
+    poly = geo_layer("Polygon", "EPSG:2180", [PARCEL, shifted, PARCEL.replace("130", "200")])
+    geo = GeoColumns(measure=True, area_unit="ha", xy=True)
+    plan = layer_reader.plan_package(poly, [FieldChoice("nr_dz")], geo=geo, ellipsoid=project.ellipsoid(),
+                                     personal={}, language="pl", summary=Summary(sheet=True))
+    area = next(c for c in plan.columns if c.name.startswith("@area_"))
+    check(area.summed and not any(c.summed for c in plan.columns if c.name.startswith("@x")),
+          "pomiar z geometrii sumowany, X/Y nie")
+    path = str(OUT / "r8_geometria.xlsx")
+    export(path, plan.read(), Look(), Sheets())
+    each = [qgis_measure(poly, "$area", f) for f in poly.getFeatures()]
+    rounded = math.fsum(round(a / 10000, 4) for a in each)
+    got = labelled(path, sheet, tr("pl", "summary.sum", header=tr("pl", "geo.col.area")))
+    exact = poly.aggregate(QgsAggregateCalculator.Aggregate.Sum, "$area")[0] / 10000
+    check(got == rounded and abs(got - exact) <= len(each) * 0.5e-4,
+          f"suma pomiaru {got} = suma zaokrąglonych $area {rounded}, od aggregate {exact:.6f} o <= n·0,5e-4")
+    plan = layer_reader.plan_package(poly, [FieldChoice("nr_dz")], geo=geo, ellipsoid=project.ellipsoid(),
+                                     personal={}, summary=Summary(measure=False))
+    check(not any(c.summed for c in plan.columns), "Summary.measure=False wyłącza sumę pomiaru")
+
+    # Processing: ustawienia z warstwy trafiają do pliku tak samo jak z okna.
+    gp = gpkg_layer("dzialki_r8")
+    r8 = [FieldChoice(n, export=n not in ("nazwisko", "nr_ident")) for n in gp.fields().names()]
+    layer_reader.save_choices(gp, r8, None, summary=Summary(sheet=True, row=True, group_by="teryt"))
+    for key, value in {"look": json.dumps(to_dict(Look())), "sheets": json.dumps(to_dict(Sheets())),
+                       "author": "", "file_language": "pl"}.items():
+        QgsSettings().setValue("data_handover/" + key, value)
+    from_window = str(OUT / "r8_okno.xlsx")
+    window_export(iface, gp, from_window)
+    from_alg = str(OUT / "r8_algorytm.xlsx")
+    processing.run("dataHandover:package", {"INPUT": gp, "OUTPUT": from_alg})
+    check(sheet in load_workbook(from_alg).sheetnames and workbook_cells(from_alg) == workbook_cells(from_window),
+          "Processing: „Podsumowanie” i wiersz sum jak w eksporcie z okna")
+    for item in (layer, poly, gp):
+        project.removeMapLayer(item.id())
 
 
 def check(condition: bool, message: str) -> None:
@@ -876,6 +999,7 @@ def main() -> None:
 
     geometry()
     processing_algorithm(iface)
+    summaries(iface)
     background(layer)
 
     # Plik do obejrzenia (zrzut arkuszy robi scripts/render-xlsx.sh).

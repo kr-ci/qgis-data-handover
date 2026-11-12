@@ -62,6 +62,7 @@ from .core.model import (
     GeoColumns,
     Look,
     Sheets,
+    Summary,
     Theme,
     from_dict,
     look_with_theme,
@@ -1029,6 +1030,8 @@ class HandoverDialog(QDialog):
                 title=title, author=self.author_edit.text().strip(), note=self.note_edit.toPlainText().strip(),
                 language=lang, key=key, personal=self.personal,
                 geo=self.geo_columns(), ellipsoid=QgsProject.instance().ellipsoid(),
+                # Do czasu własnych kontrolek w oknie: ustawienia zapisane przy warstwie.
+                summary=from_dict(Summary, layer_reader.load_choices(self.layer).get("summary")),
             )
         except xlsx.PackageError as exc:
             self._warn(str(exc))
