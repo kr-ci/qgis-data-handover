@@ -41,7 +41,7 @@ from qgis.core import (  # noqa: E402
     QgsVectorFileWriter,
     QgsVectorLayer,
 )
-from qgis.PyQt.QtCore import QDate, QMetaType, QSettings, QTimer  # noqa: E402
+from qgis.PyQt.QtCore import QDate, QMetaType, QSettings, Qt, QTimer  # noqa: E402
 from qgis.PyQt.QtWidgets import QApplication  # noqa: E402
 from qgis.testing import start_app  # noqa: E402
 
@@ -825,8 +825,120 @@ def summaries(iface: object) -> None:
     processing.run("dataHandover:package", {"INPUT": gp, "OUTPUT": from_alg})
     check(sheet in load_workbook(from_alg).sheetnames and workbook_cells(from_alg) == workbook_cells(from_window),
           "Processing: „Podsumowanie” i wiersz sum jak w eksporcie z okna")
+    summary_window(iface, layer, poly)
     for item in (layer, poly, gp):
         project.removeMapLayer(item.id())
+
+
+def summary_window(iface: object, layer: QgsVectorLayer, poly: QgsVectorLayer) -> None:
+    """R8, okno: grupa „Sumy i podsumowanie” — listy, zapis, eksport, „sum” zgodne z Processing."""
+    import processing  # noqa: E402
+
+    def states(combo: object) -> dict[str, bool]:
+        return {str(combo.itemData(i)): combo.itemCheckState(i) == Qt.CheckState.Checked  # type: ignore[attr-defined]
+                for i in range(combo.count())}  # type: ignore[attr-defined]
+
+    def datas(combo: object) -> list[str]:
+        return [str(combo.itemData(i)) for i in range(combo.count())]  # type: ignore[attr-defined]
+
+    layer.removeCustomProperty(layer_reader.PROPERTY)
+    box = HandoverDialog(iface, None, layer=layer)
+    check(states(box.sum_combo) == {"pow_m2": True, "wartosc": True, "rok": False},
+          f"okno: sumowane domyślnie dziesiętne, całkowite nie; bez identyfikatorów i tekstu ({states(box.sum_combo)})")
+    check(not box.totals_check.isChecked() and not box.summary_check.isChecked() and box.summary() == Summary(),
+          "okno: wiersz sum i arkusz domyślnie wyłączone")
+    check("nr_dz" in datas(box.group_combo) and "pow_m2" in datas(box.group_combo)
+          and datas(box.group_combo)[0] == "", "okno: grupowanie — pozycja „bez podziału” i kolumny eksportowane")
+    for r in range(box.table.rowCount()):  # eksport maskowanego pola: ani w sumach, ani w grupowaniu
+        if box.table.item(r, 0).text() == "nr_ident":
+            box.table.item(r, 0).setCheckState(Qt.CheckState.Checked)
+    check("nr_ident" not in states(box.sum_combo) and "nr_ident" not in datas(box.group_combo),
+          "okno: pole maskowane nie jest na liście sum ani grupowania")
+    for r in range(box.table.rowCount()):
+        if box.table.item(r, 0).text() == "wartosc":
+            box.table.item(r, 0).setCheckState(Qt.CheckState.Unchecked)
+    check("wartosc" not in states(box.sum_combo) and "wartosc" not in datas(box.group_combo),
+          "okno: odznaczone pole znika z obu list")
+    box.close()
+
+    # Pomiar z geometrii: na liście, gdy zaznaczony w grupie geometrii.
+    pbox = HandoverDialog(iface, None, layer=poly)
+    check("@measure" not in datas(pbox.sum_combo), "okno: bez pomiaru w geometrii nie ma go na liście sum")
+    pbox.measure_check.setChecked(True)
+    check(states(pbox.sum_combo).get("@measure") is True
+          and pbox.sum_combo.itemText(pbox.sum_combo.findData("@measure"))
+          == pbox.t("ui.summary.measure", header=pbox.measure_check.text()),
+          "okno: pomiar z geometrii na liście sum, domyślnie zaznaczony")
+    pbox.sum_combo.setItemCheckState(pbox.sum_combo.findData("@measure"), Qt.CheckState.Unchecked)
+    pbox.measure_check.setChecked(False)
+    pbox.measure_check.setChecked(True)
+    check(states(pbox.sum_combo)["@measure"] is False and pbox.summary().measure is False,
+          "okno: wybór pomiaru przeżywa odświeżenie listy")
+    pbox.close()
+
+    # Zapisany wybór „sum”: okno go pokazuje, zachowuje przy zapisie i stosuje przy eksporcie.
+    saved = Summary(sheet=True, group_by="teryt")
+    layer_reader.save_choices(layer, [FieldChoice("rok", sum=True), FieldChoice("pow_m2", sum=False)], None,
+                              summary=saved)
+    sbox = HandoverDialog(iface, None, layer=layer)
+    check(states(sbox.sum_combo) == {"pow_m2": False, "wartosc": True, "rok": True}
+          and sbox.summary_check.isChecked() and not sbox.totals_check.isChecked()
+          and sbox.group_combo.currentData() == "teryt" and sbox.summary() == saved,
+          f"okno: zapisane „sum” i podsumowanie widoczne po otwarciu ({states(sbox.sum_combo)})")
+    sbox._save_state()
+    sbox.close()
+    kept = {c.name: c.sum for c in layer_reader.saved_choices(layer, {})[0]}
+    check(kept["rok"] is True and kept["pow_m2"] is False and kept["wartosc"] is True and kept["fid"] is None
+          and kept["nr_dz"] is None and layer_reader.saved_choices(layer, {})[3] == saved,
+          f"okno: zapis nie kasuje „sum” ({kept})")
+    path = str(OUT / "r8_okno_rok.xlsx")
+    window_export(iface, layer, path)
+    sheet = tr("pl", "sheet.summary")
+    check(labelled(path, sheet, tr("pl", "summary.sum", header="rok")) == 2019 + 2020 + 2021,
+          "okno: eksport sumuje pole całkowite zapisane z sum=True")
+    check(all(c.value != tr("pl", "summary.sum", header="Powierzchnia")
+              for row in load_workbook(path)[sheet].iter_rows() for c in row),
+          "okno: eksport nie sumuje pola z sum=False")
+
+    # To samo, co robi Processing, na zapisanych ustawieniach warstwy.
+    gp = gpkg_layer("dzialki_r8_sum")
+    fields = [FieldChoice(n, export=n not in ("nazwisko", "nr_ident"), sum=False if n == "pow_m2" else None)
+              for n in gp.fields().names()]
+    layer_reader.save_choices(gp, fields, None, summary=Summary(sheet=True, row=True, group_by="teryt"))
+    from_window = str(OUT / "r8_okno_sum.xlsx")
+    window_export(iface, gp, from_window)
+    from_alg = str(OUT / "r8_algorytm_sum.xlsx")
+    processing.run("dataHandover:package", {"INPUT": gp, "OUTPUT": from_alg})
+    check(workbook_cells(from_alg) == workbook_cells(from_window)
+          and layer_reader.load_choices(gp)["fields"]["pow_m2"]["sum"] is False,
+          "okno i Processing: ten sam plik przy zapisanym sum=False")
+
+    # Okno ustawia, co widać; eksport z okna zapisuje to przy warstwie.
+    gp_box = HandoverDialog(iface, None, layer=gp)
+    gp_box.totals_check.setChecked(True)
+    gp_box.summary_check.setChecked(False)
+    gp_box.group_combo.setCurrentIndex(gp_box.group_combo.findData("nr_dz"))
+    gp_box._save_state()
+    now = layer_reader.saved_choices(gp, {})[3]
+    gp_box.close()
+    check(now == Summary(row=True, sheet=False, group_by="nr_dz"), f"okno: zapis ustawień podsumowania ({now})")
+    again = HandoverDialog(iface, None, layer=gp)
+    again.reset_settings()
+    check(again.summary() == now, "„Przywróć domyślne” nie zmienia ustawień sum warstwy")
+    again.close()
+    project = QgsProject.instance()
+    project.removeMapLayer(gp.id())
+
+    layer_reader.save_choices(layer, [FieldChoice("rok", sum=True)], None, summary=Summary(row=True, sheet=True))
+    for lang in ("pl", "en"):
+        QgsSettings().setValue(UI_LANGUAGE, lang)
+        shot = HandoverDialog(None, None, layer=layer)
+        shot.resize(980, 760)
+        shot.show()
+        QApplication.processEvents()
+        shot.grab().save(str(SCREENS / f"okno_sumy_{lang}_qgis{VERSION}.png"))
+        shot.close()
+    QgsSettings().remove(UI_LANGUAGE)
 
 
 def check(condition: bool, message: str) -> None:

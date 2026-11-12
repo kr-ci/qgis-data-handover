@@ -11,7 +11,7 @@ import re
 from typing import Any, Optional
 
 from qgis.core import Qgis, QgsMessageLog, QgsProject, QgsSettings, QgsVectorLayer
-from qgis.gui import QgsColorButton, QgsFieldComboBox, QgsFileWidget, QgsMapLayerComboBox
+from qgis.gui import QgsCheckableComboBox, QgsColorButton, QgsFieldComboBox, QgsFileWidget, QgsMapLayerComboBox
 from qgis.PyQt.QtCore import Qt, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (
@@ -77,6 +77,7 @@ DEFAULT_LANGUAGE = "en"  # język pliku, dopóki użytkownik nie wybierze innego
 # Stały wygląd okna — niezależny od stylu pliku, który użytkownik ustawia.
 ACCENT, ACCENT_TEXT = "1F3A5F", "FFFFFF"
 COL_FIELD, COL_KIND, COL_HEADER, COL_UNIT, COL_DESC, COL_PRIVACY = range(6)
+MEASURE = "@measure"  # dane pozycji „pomiar z geometrii” na liście sum (nazwy pól nie zaczynają się od „@”)
 NAME_ROLE = Qt.ItemDataRole.UserRole
 KIND_ROLE = Qt.ItemDataRole.UserRole + 1
 PERSONAL_COLOR = QColor("#9C2B23")
@@ -225,6 +226,10 @@ class HandoverDialog(QDialog):
         self.layer_gone = False
         self.last_result: Optional[xlsx.ExportResult] = None
         self._geo = GeoColumns()  # zapisane ustawienia geometrii warstwy (jednostka drugiego typu pomiaru)
+        self._sum_state: dict[str, bool] = {}  # zaznaczenia „Sumuj kolumny” (nazwa pola albo MEASURE)
+        self._summable: set[str] = set()  # pola, które w tej chwili wolno sumować
+        self._group_by = ""  # zapisana kolumna grupowania — zostaje, gdy pole chwilowo nie jest eksportowane
+        self._refreshing = False
 
         self.setWindowTitle(self.t("ui.title"))
         self.setMinimumSize(980, 700)
@@ -353,6 +358,7 @@ class HandoverDialog(QDialog):
             row.addWidget(button)
         layout.addLayout(row)
         layout.addWidget(self._geo_box())
+        layout.addWidget(self._summary_box())
         return tab
 
     def _geo_box(self) -> QGroupBox:
@@ -383,8 +389,107 @@ class HandoverDialog(QDialog):
         self.geo_hint.setWordWrap(True)
         column.addWidget(self.geo_hint)
         self.measure_check.toggled.connect(self.unit_combo.setEnabled)
+        self.measure_check.toggled.connect(self._update_preview)
         self.link_check.toggled.connect(self.map_combo.setEnabled)
         return self.geo_box
+
+    def _summary_box(self) -> QGroupBox:
+        """Sumy i podsumowanie (R8, wariant B makiet): pod kolumnami z geometrii."""
+        self.summary_box = QGroupBox(self.t("ui.summary.group"))
+        form = QFormLayout(self.summary_box)
+        self.sum_combo = QgsCheckableComboBox()
+        self.sum_combo.setMinimumWidth(320)
+        columns = QHBoxLayout()
+        columns.addWidget(self.sum_combo)
+        columns.addStretch()
+        form.addRow(self.t("ui.summary.columns"), columns)
+        self.totals_check = QCheckBox(self.t("ui.summary.row").replace("&", "&&"))
+        self.summary_check = QCheckBox()
+        self.group_combo = QComboBox()
+        options = QHBoxLayout()
+        options.addWidget(self.totals_check)
+        options.addSpacing(16)
+        options.addWidget(self.summary_check)
+        options.addWidget(self.group_combo)
+        options.addStretch()
+        form.addRow(self.t("ui.summary.add"), options)
+        hint = QLabel(self.t("ui.summary.hint"))
+        hint.setObjectName("hint")
+        hint.setWordWrap(True)
+        form.addRow(hint)
+        self.sum_combo.checkedItemsChanged.connect(self._sum_changed)
+        self.group_combo.currentIndexChanged.connect(self._group_changed)
+        self.summary_check.setText(self._summary_sheet_text())
+        return self.summary_box
+
+    def _summary_sheet_text(self) -> str:
+        """Nazwa arkusza w języku pliku — taką zobaczy odbiorca."""
+        name = tr(str(self.lang_combo.currentData() or self.lang) if hasattr(self, "lang_combo") else self.lang,
+                  "sheet.summary")
+        return self.t("ui.summary.sheet", name=name).replace("&", "&&")
+
+    def summary(self) -> Summary:
+        return Summary(row=self.totals_check.isChecked(), sheet=self.summary_check.isChecked(),
+                       group_by=self._group_by, measure=self._sum_state.get(MEASURE, True))
+
+    def _sum_changed(self, *_args: Any) -> None:
+        if self._refreshing:
+            return
+        for i in range(self.sum_combo.count()):
+            self._sum_state[str(self.sum_combo.itemData(i))] = (
+                self.sum_combo.itemCheckState(i) == Qt.CheckState.Checked)
+
+    def _group_changed(self, *_args: Any) -> None:
+        if not self._refreshing:
+            self._group_by = str(self.group_combo.currentData() or "")
+
+    def _set_summary(self, summary: Summary, choices: list[FieldChoice]) -> None:
+        """Ustawia grupę z zapisanych ustawień warstwy (`saved_choices`)."""
+        self._refreshing = True
+        self.sum_combo.clear()  # stara lista nie może wpisać się w ustawienia nowej warstwy
+        self._refreshing = False
+        self._sum_state = {c.name: c.sum for c in choices if c.sum is not None}
+        self._sum_state[MEASURE] = summary.measure
+        self._group_by = summary.group_by
+        self.totals_check.setChecked(summary.row)
+        self.summary_check.setChecked(summary.sheet)
+
+    def _refresh_summary(self) -> None:
+        """Odświeża listy sum i grupowania według pól, ochrony danych osobowych i pomiaru; wybór zostaje."""
+        self._sum_changed()  # zaznaczenie ustawione w kodzie nie zawsze wysyła sygnał
+        self._refreshing = True
+        try:
+            self.sum_combo.clear()
+            self.group_combo.clear()
+            self.group_combo.addItem(self.t("ui.summary.none"), "")
+            self._summable = set()
+            self.summary_check.setText(self._summary_sheet_text())
+            if self.layer is None:
+                return
+            for r in range(self.table.rowCount()):
+                choice, index = self._row_state(r)
+                column = layer_reader.describe(self.layer, index, choice)
+                column.masked = choice.name in self.personal and choice.protect != "keep"
+                if column.masked:
+                    column.kind = "text"
+                    column.is_identifier = False
+                if layer_reader.summable(column):
+                    self._summable.add(choice.name)
+                    default = self._sum_state.setdefault(choice.name, column.kind == "decimal")
+                    if choice.export:
+                        self.sum_combo.addItemWithCheckState(
+                            column.header or column.name,
+                            Qt.CheckState.Checked if default else Qt.CheckState.Unchecked, choice.name)
+                if choice.export and not column.masked:
+                    self.group_combo.addItem(column.header or column.name, choice.name)
+            if not self.measure_check.isHidden() and self.measure_check.isChecked():
+                text = self.t("ui.summary.measure", header=self.measure_check.text())
+                on = self._sum_state.setdefault(MEASURE, True)
+                self.sum_combo.addItemWithCheckState(
+                    text, Qt.CheckState.Checked if on else Qt.CheckState.Unchecked, MEASURE)
+            self.group_combo.setCurrentIndex(max(0, self.group_combo.findData(self._group_by)))
+        finally:
+            self._refreshing = False
 
     def geo_columns(self) -> GeoColumns:
         unit = str(self.unit_combo.currentData() or "")
@@ -763,11 +868,14 @@ class HandoverDialog(QDialog):
         self.key_combo.setLayer(self.layer)
         if self.layer is None:
             self._set_geo(GeoColumns(), "none")
+            self._refresh_summary()
             self._update_scope_labels()
             return
         self.samples = layer_reader.sample_values(self.layer, 200, represented=True)
         self.personal = layer_reader.personal_data(self.layer, self.samples)
         saved = layer_reader.load_choices(self.layer)
+        saved_fields, _key, _geo, saved_summary = layer_reader.saved_choices(self.layer, self.personal)
+        self._set_summary(saved_summary, saved_fields)
         stored = saved.get("fields", {})
         names = self.layer.fields().names()
         saved_order = [n for n in saved.get("order", []) if n in names]
@@ -841,6 +949,8 @@ class HandoverDialog(QDialog):
             description=self.table.item(row, COL_DESC).text().strip(),
             protect=str(combo.currentData()) if isinstance(combo, QComboBox) else "",
         )
+        if choice.name in self._summable:
+            choice.sum = self._sum_state.get(choice.name)
         return choice, self.layer.fields().indexOf(choice.name) if self.layer else -1
 
     def choices(self) -> list[FieldChoice]:
@@ -893,6 +1003,7 @@ class HandoverDialog(QDialog):
     def _update_preview(self, *_args: Any) -> None:
         if self._filling or not hasattr(self, "changes_check") or not hasattr(self, "preview"):
             return
+        self._refresh_summary()
         look = self.look()
         lang = str(self.lang_combo.currentData() or self.lang)
         chosen = [c for c in self.choices() if c.export][:4]
@@ -1030,8 +1141,7 @@ class HandoverDialog(QDialog):
                 title=title, author=self.author_edit.text().strip(), note=self.note_edit.toPlainText().strip(),
                 language=lang, key=key, personal=self.personal,
                 geo=self.geo_columns(), ellipsoid=QgsProject.instance().ellipsoid(),
-                # Do czasu własnych kontrolek w oknie: ustawienia zapisane przy warstwie.
-                summary=from_dict(Summary, layer_reader.load_choices(self.layer).get("summary")),
+                summary=self.summary(),
             )
         except xlsx.PackageError as exc:
             self._warn(str(exc))
@@ -1095,7 +1205,7 @@ class HandoverDialog(QDialog):
         """Ustawienia okna: pola warstwy w projekcie, wygląd i arkusze w ustawieniach użytkownika."""
         if self.layer is not None:
             layer_reader.save_choices(self.layer, self.choices(), self.key_combo.currentField() or None,
-                                      self.geo_columns())
+                                      self.geo_columns(), self.summary())
         for name, value in (("look", json.dumps(to_dict(self.look()))),
                             ("sheets", json.dumps(to_dict(self.sheets()))),
                             ("custom_color", self.custom_color), ("author", self.author_edit.text().strip()),
