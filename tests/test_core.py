@@ -686,6 +686,45 @@ def test_totals_structured_reference_escapes(tmp_path: Path) -> None:
         assert load_workbook(path)["Dane"].cell(row=HEADER_ROW + 3, column=3).value == expected
 
 
+def test_totals_structured_reference_escapes_backtick() -> None:
+    assert xlsx._structured("a`b") == "a'`b"
+
+
+def test_deleted_data_row_in_file_with_totals_row_is_rejected(tmp_path: Path) -> None:
+    """Usunięty wiersz danych: wiersz sum podjeżdża w górę i nie może być wzięty za dane."""
+    labelled = _totals_pkg(rows=[["12/3", "0214011", 1.0, "usługi", dt.date(2024, 5, 3), None, True],
+                                 ["12/4", "0214011", 2.0, "usługi", dt.date(2024, 5, 3), None, False],
+                                 ["12/5", "0214011", 3.0, "usługi", dt.date(2024, 5, 3), None, False]])
+    summed_first = parcels(summary=Summary(row=True), columns=[Column("n", "Liczba", "integer", summed=True)],
+                           rows=[[1], [2], [3]], key=None)
+    for i, pkg in enumerate((labelled, summed_first)):
+        first = str(tmp_path / f"v1_{i}.xlsx")
+        export(first, pkg, Look())
+        assert len(read_snapshot(first).rows) == 3
+        wb = load_workbook(first)
+        wb["Dane"].delete_rows(HEADER_ROW + 3)
+        edited = str(tmp_path / f"usuniety_{i}.xlsx")
+        wb.save(edited)
+        with pytest.raises(PackageError, match="zmieniono po eksporcie"):
+            export(str(tmp_path / f"v2_{i}.xlsx"), pkg, Look(), previous=edited)
+
+
+def test_masked_summed_column_is_not_totalled(tmp_path: Path) -> None:
+    pkg = parcels(summary=Summary(row=True, sheet=True, group_by="przezn"),
+                  rows=[["12/3", "0214011", 1.0, "usługi", dt.date(2024, 5, 3), "Jan Kowalski", True],
+                        ["12/4", "0214011", 2.0, "usługi", dt.date(2024, 5, 3), "Anna Nowak", False]])
+    next(c for c in pkg.columns if c.name == "wlasc").summed = True
+    path = str(tmp_path / "a.xlsx")
+    export(path, pkg, Look())
+    wb = load_workbook(path)
+    ws = wb["Dane"]
+    assert ws.cell(row=HEADER_ROW + 3, column=6).value is None
+    summary = wb[tr("pl", "sheet.summary")]
+    assert all(tr("pl", "summary.sum", header="Właściciel") != c.value for row in summary.iter_rows() for c in row)
+    text = _all_text(path)
+    assert "Kowalski" not in text and "Nowak" not in text
+
+
 def test_no_totals_row_without_rows_or_summed_columns(tmp_path: Path) -> None:
     cases = [
         _totals_pkg(rows=[]),

@@ -13,6 +13,7 @@ import glob
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -885,8 +886,30 @@ def summary_window(iface: object, layer: QgsVectorLayer, poly: QgsVectorLayer) -
           and sbox.summary_check.isChecked() and not sbox.totals_check.isChecked()
           and sbox.group_combo.currentData() == "teryt" and sbox.summary() == saved,
           f"okno: zapisane „sum” i podsumowanie widoczne po otwarciu ({states(sbox.sum_combo)})")
+    def set_export(win: object, name: str, on: bool) -> None:
+        for r in range(win.table.rowCount()):  # type: ignore[attr-defined]
+            if win.table.item(r, 0).text() == name:  # type: ignore[attr-defined]
+                win.table.item(r, 0).setCheckState(  # type: ignore[attr-defined]
+                    Qt.CheckState.Checked if on else Qt.CheckState.Unchecked)
+
+    set_export(sbox, "teryt", False)  # zapisane pole grupowania przestaje być eksportowane
+    check(sbox.group_combo.currentData() == "" and sbox.summary().group_by == "",
+          f"okno: lista pokazuje „bez podziału”, więc do pliku nie idzie stare pole ({sbox.summary().group_by!r})")
+    set_export(sbox, "teryt", True)
+    check(sbox.group_combo.currentData() == "teryt" and sbox.summary() == saved,
+          "okno: ponowne zaznaczenie pola przywraca grupowanie")
+    sbox.group_combo.setCurrentIndex(0)
+    check(sbox.summary().group_by == "", "okno: wybór „bez podziału” daje pusty podział")
+    sbox.group_combo.setCurrentIndex(sbox.group_combo.findData("teryt"))
     sbox._save_state()
     sbox.close()
+    ybox = HandoverDialog(iface, None, layer=layer)
+    for name in layer.fields().names():
+        set_export(ybox, name, name == "rok")
+    preview = re.sub(r"<[^>]+>", "", ybox.preview.text())
+    check("2019" in preview and not re.search(r"2\W019", preview),
+          f"okno: podgląd pokazuje rok bez separatora ({preview!r})")
+    ybox.close()
     kept = {c.name: c.sum for c in layer_reader.saved_choices(layer, {})[0]}
     check(kept["rok"] is True and kept["pow_m2"] is False and kept["wartosc"] is True and kept["fid"] is None
           and kept["nr_dz"] is None and layer_reader.saved_choices(layer, {})[3] == saved,

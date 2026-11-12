@@ -39,8 +39,8 @@ CELL_LIMIT = 32_767
 EXACT_INT_LIMIT = 10**15
 YEAR_RANGE = (1000, 2100)  # liczby z tego zakresu w polu całkowitym uznajemy za rok
 WIDTH_SAMPLE = 300
-# Excel przyjmuje najwyżej 65 530 hiperłączy w arkuszu; plik z większą liczbą uznaje za uszkodzony.
 TOTALS_TABLE = "HandoverData"  # nazwa tabeli Excela w arkuszu „Dane”
+# Excel przyjmuje najwyżej 65 530 hiperłączy w arkuszu; plik z większą liczbą uznaje za uszkodzony.
 HYPERLINK_LIMIT = 65_530
 LINK_COLOR = "0563C1"  # kolor zwykłego hiperłącza w Excelu
 
@@ -200,7 +200,7 @@ def display(value: Value, col: Optional[Column], lang: str) -> str:
 def read_snapshot(path: str) -> Snapshot:
     name = os.path.basename(path)
     try:
-        wb = load_workbook(path, read_only=True, data_only=True)
+        wb = load_workbook(path, read_only=True)
     except Exception as exc:  # uszkodzony plik, nie-zip, nie-xlsx
         raise NotHandoverFileError(name) from exc
     try:
@@ -224,18 +224,25 @@ def read_snapshot(path: str) -> Snapshot:
         count = int(meta["rows"])
         extra = 1 if meta.get("totals_row") == "1" else 0  # wiersz sum pod danymi
         width = len(columns)
-        found = [
-            list(values) + [None] * (width + 1 - len(values))
-            for values in wb[meta["data_sheet"]].iter_rows(
-                min_row=header_row, max_row=header_row + count + 1 + extra, max_col=width + 1, values_only=True
+        # Komórki z formułami (wiersz sum) rozpoznajemy po typie, nie po tekście: zwykły tekst
+        # zaczynający się od „=” jest zapisany jako tekst.
+        cells = [
+            list(row) + [None] * (width + 1 - len(row))
+            for row in wb[meta["data_sheet"]].iter_rows(
+                min_row=header_row, max_row=header_row + count + 1 + extra, max_col=width + 1
             )
         ]
+        found = [[c.value if c is not None else None for c in row] for row in cells]
+        has_formula = [any(getattr(c, "data_type", "") == "f" for c in row) for row in cells]
+        has_formula += [False] * (count + 2 + extra - len(has_formula))
         found += [[None] * (width + 1)] * (count + 2 + extra - len(found))
         # Ręczne zmiany po eksporcie (przestawione lub dopisane kolumny, dopisane
         # lub usunięte wiersze) dałyby cicho błędny raport — odrzucamy taki plik.
         edited = found[0] != [headers[c] for c in columns] + [None]
         edited |= any(all(v is None for v in row[:width]) for row in found[1 : count + 1])
         edited |= bool(count) and any(v is not None for v in found[count + 1 + extra])
+        # Wiersz sum musi stać zaraz pod danymi; inaczej ktoś usunął wiersz danych.
+        edited |= bool(extra) and (not has_formula[count + 1] or any(has_formula[1 : count + 1]))
         if edited:
             raise EditedFileError(name)
         rows = [cast(list[Value], row[:width]) for row in found[1 : count + 1]]
@@ -501,8 +508,8 @@ def _header_row(ws: Worksheet, row: int, headers: Sequence[str], look: Look, bor
 
 
 def _structured(name: str) -> str:
-    """Nazwa kolumny w odwołaniu strukturalnym: znaki specjalne poprzedza `'`."""
-    return "".join(f"'{ch}" if ch in "[]#'" else ch for ch in name)
+    """Nazwa kolumny w odwołaniu strukturalnym: znaki specjalne ([ ] # ' i odwrotny apostrof) poprzedza `'`."""
+    return "".join(f"'{ch}" if ch in "[]#'`" else ch for ch in name)
 
 
 def _grid(ws: Worksheet, look: Look, header_row: int, cols: int, rows: int, table_name: str,

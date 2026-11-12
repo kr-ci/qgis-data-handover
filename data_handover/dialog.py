@@ -8,6 +8,7 @@ import html
 import json
 import os
 import re
+from itertools import zip_longest
 from typing import Any, Optional
 
 from qgis.core import Qgis, QgsMessageLog, QgsProject, QgsSettings, QgsVectorLayer
@@ -61,6 +62,7 @@ from .core.model import (
     CellLook,
     GeoColumns,
     Look,
+    Package,
     Sheets,
     Summary,
     Theme,
@@ -228,7 +230,7 @@ class HandoverDialog(QDialog):
         self._geo = GeoColumns()  # zapisane ustawienia geometrii warstwy (jednostka drugiego typu pomiaru)
         self._sum_state: dict[str, bool] = {}  # zaznaczenia „Sumuj kolumny” (nazwa pola albo MEASURE)
         self._summable: set[str] = set()  # pola, które w tej chwili wolno sumować
-        self._group_by = ""  # zapisana kolumna grupowania — zostaje, gdy pole chwilowo nie jest eksportowane
+        self._group_by = ""  # zapamiętana kolumna grupowania; do pliku idzie tylko to, co pokazuje lista
         self._refreshing = False
 
         self.setWindowTitle(self.t("ui.title"))
@@ -430,7 +432,7 @@ class HandoverDialog(QDialog):
 
     def summary(self) -> Summary:
         return Summary(row=self.totals_check.isChecked(), sheet=self.summary_check.isChecked(),
-                       group_by=self._group_by, measure=self._sum_state.get(MEASURE, True))
+                       group_by=str(self.group_combo.currentData() or ""), measure=self._sum_state.get(MEASURE, True))
 
     def _sum_changed(self, *_args: Any) -> None:
         if self._refreshing:
@@ -1009,6 +1011,9 @@ class HandoverDialog(QDialog):
         chosen = [c for c in self.choices() if c.export][:4]
         columns = [layer_reader.describe(self.layer, self.layer.fields().indexOf(c.name), c)
                    for c in chosen] if self.layer else []
+        # Rok bez separatora tysięcy — tak jak w pliku (decyduje o tym cała próbka wartości).
+        sample_rows = list(zip_longest(*[self.samples.get(c.name, []) for c in chosen]))
+        columns = list(xlsx._plain_years(Package("", columns, sample_rows), sample_rows).columns)
         side = CSS_BORDER.get(look.border_style, "")
         line = f"{side} #{look.border_color}" if side else ""
 
