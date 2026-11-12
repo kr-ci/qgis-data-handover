@@ -313,6 +313,9 @@ def export(
     rows, notes = prepare_rows(pkg)
     pkg = _plain_years(pkg, rows)
     notes = link_notes + notes
+    summary_data = summarize(pkg, rows) if pkg.summary.sheet else None
+    if summary_data is not None and summary_data.group_missing:
+        notes.append(tr(lang, "note.summary.group_missing", field=pkg.summary.group_by))
     changes: Optional[list[diff.Change]] = None
     snapshot: Optional[Snapshot] = None
     if previous:
@@ -336,14 +339,15 @@ def export(
     assert ws is not None
     _check(canceled)
     _write_data(ws, pkg, rows, look, sheets, changes, progress, canceled)
+    if summary_data is not None:
+        _write_summary(wb.create_sheet(), pkg, look, summary_data)
     if sheets.dictionary:
         _write_dictionary(wb.create_sheet(), pkg, look, sheets.dictionary_items)
     if sheets.about:
         _write_about(wb.create_sheet(), pkg, look, sheets, notes, snapshot)
     if changes is not None and snapshot is not None:
         _write_changes(wb.create_sheet(), pkg, look, changes, snapshot)
-    totals = bool(pkg.summary.row and rows and any(c.summed and not c.masked for c in pkg.columns))
-    _write_meta(wb.create_sheet(META_SHEET), pkg, len(rows), look.header_row, totals)
+    _write_meta(wb.create_sheet(META_SHEET), pkg, len(rows), look.header_row, _has_totals(pkg, rows))
     wb.properties.title = _clean(pkg.title)
     wb.properties.creator = "Data Handover (QGIS)"
     _save(wb, path, canceled)
@@ -575,6 +579,8 @@ def _write_data(
     if look.show_title:
         subtitle = tr(lang, "data.subtitle", count=count_label(lang, len(rows)),
                       date=display(pkg.exported_at, None, lang))
+        if pkg.summary.sheet:
+            subtitle += tr(lang, "data.subtitle.summary", name=tr(lang, "sheet.summary"))
         if sheets.dictionary:
             subtitle += tr(lang, "data.subtitle.dictionary", name=tr(lang, "sheet.dictionary"))
         if sheets.about:
@@ -582,7 +588,7 @@ def _write_data(
         _title(ws, pkg.title, subtitle, look)
     headers = _unique_headers(pkg.columns)
     summed = [c.summed and not c.masked for c in pkg.columns]
-    totals = bool(pkg.summary.row and rows and any(summed))
+    totals = _has_totals(pkg, rows)
     borders = _Borders(look, len(rows) + 1 + totals, len(headers))
     _header_row(ws, hr, headers, look, borders)
 
@@ -644,15 +650,24 @@ def _write_data(
     _page_setup(ws, pkg.title, lang, hr, look.landscape)
 
 
+def _has_totals(pkg: Package, rows: Sequence[Sequence[Value]]) -> bool:
+    """Czy pod „Danymi” jest wiersz sum: włączony, są wiersze i jest co sumować."""
+    return bool(pkg.summary.row and rows and any(c.summed and not c.masked for c in pkg.columns))
+
+
+def _style_total(cell: Union[Cell, MergedCell], look: Look, base: Border, align: Alignment) -> None:
+    """Wygląd wiersza „Razem”: pogrubienie, tło pasów, gruba górna krawędź w kolorze tytułu."""
+    edge = Side(style="medium", color=look.title_color)
+    cell.border = Border(top=edge, bottom=base.bottom, left=base.left, right=base.right)
+    cell.font, cell.fill, cell.alignment = _font(look.body, bold=True), _solid(look.stripe_color), align
+
+
 def _write_totals(
     ws: Worksheet, look: Look, hr: int, headers: Sequence[str], summed: Sequence[bool], label: str,
     formats: Sequence[str], aligns: Sequence[Alignment], borders: _Borders, count: int,
 ) -> None:
     """Wiersz sum tuż pod danymi: SUBTOTAL(109) liczy tylko wiersze widoczne po filtrze."""
     r = count + 1
-    font = _font(look.body, bold=True)
-    fill = _solid(look.stripe_color)
-    edge = Side(style="medium", color=look.title_color)
     for c, name in enumerate(headers):
         cell = ws.cell(row=hr + r, column=c + 1)
         letter = get_column_letter(c + 1)
@@ -664,9 +679,7 @@ def _write_totals(
             cell.number_format = formats[c]
         elif c == 0:
             _set_text(cell, label)
-        base = borders.at(r, c)
-        cell.border = Border(top=edge, bottom=base.bottom, left=base.left, right=base.right)
-        cell.font, cell.fill, cell.alignment = font, fill, aligns[c]
+        _style_total(cell, look, borders.at(r, c), aligns[c])
 
 
 def _header_tip(col: Column) -> str:
@@ -729,6 +742,140 @@ def _fit_columns(
         if look.header.wrap:
             lines = max(lines, math.ceil(len(header) * head_scale / max(width - 3, 1)))
     ws.row_dimensions[header_row].height = look.header.size * 1.45 * min(lines, 4) + 8
+
+
+# --- arkusz „Podsumowanie” ----------------------------------------------------
+
+
+@dataclass
+class SummaryData:
+    """Liczby do arkusza „Podsumowanie”, policzone z wyniku `prepare_rows()`."""
+
+    count: int
+    sums: list[tuple[Column, float]]  # kolumny sumowane (bez maskowanych) i suma całości
+    groups: Optional[tuple[Column, list[tuple[Value, int, list[float]]]]]  # (grupa, liczba, sumy jak w `sums`)
+    gaps: list[tuple[str, int]]  # nagłówek kolumny i liczba pustych komórek (tylko > 0)
+    masked: list[str]  # nagłówki kolumn maskowanych (pominięte)
+    group_missing: bool = False  # `group_by` nie jest kolumną pliku
+
+
+def _total(values: Sequence[Value]) -> float:
+    """Suma wartości liczbowych; tekst (np. długi identyfikator), `None` i `bool` pomijamy."""
+    return math.fsum(v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool))
+
+
+def summarize(pkg: Package, rows: Sequence[Sequence[Value]]) -> SummaryData:
+    """Całość, grupy według `Summary.group_by` i braki danych — jedna funkcja dla całego arkusza."""
+    lang, name = pkg.language, pkg.summary.group_by
+    headers = _unique_headers(pkg.columns)
+    summed = [i for i, c in enumerate(pkg.columns) if c.summed and not c.masked]
+    sums = [(pkg.columns[i], _total([row[i] for row in rows])) for i in summed]
+    gaps = [] if not rows else [
+        (headers[i], n) for i, c in enumerate(pkg.columns)
+        if not c.masked and (n := sum(1 for row in rows if row[i] is None or row[i] == ""))
+    ]
+    masked = [headers[i] for i, c in enumerate(pkg.columns) if c.masked]
+    index = next((i for i, c in enumerate(pkg.columns) if c.name == name), None)
+    groups = None
+    if rows and index is not None and not pkg.columns[index].masked:
+        col = pkg.columns[index]
+        members: dict[Value, list[Sequence[Value]]] = {}
+        for row in rows:
+            members.setdefault(None if row[index] == "" else row[index], []).append(row)
+        ordered = sorted(members, key=lambda v: (-len(members[v]), v is None, display(v, col, lang)))
+        groups = (col, [(v, len(members[v]), [_total([r[i] for r in members[v]]) for i in summed])
+                        for v in ordered])
+    return SummaryData(len(rows), sums, groups, gaps, masked, group_missing=bool(name) and index is None)
+
+
+def _write_summary(ws: Worksheet, pkg: Package, look: Look, data: SummaryData) -> None:
+    lang = pkg.language
+    ws.title = tr(lang, "sheet.summary")
+    ws.sheet_view.showGridLines = False
+    subtitle = tr(lang, "summary.subtitle", count=count_label(lang, data.count),
+                  date=display(pkg.exported_at, None, lang))
+    _title(ws, tr(lang, "sheet.summary"), subtitle, look)
+    headers = {c.name: h for c, h in zip(pkg.columns, _unique_headers(pkg.columns))}
+    line = Side(style="thin", color=look.border_color)
+    body, plain = _font(look.body), _alignment(look.body)
+    count_format = "#,##0"
+    widths = {1: 26.0}
+
+    def section(r: int, text: str) -> None:
+        cell = ws.cell(row=r, column=1)
+        _set_text(cell, text)
+        cell.font = _font(look.body, size=look.body.size + 1, bold=True, color=look.title_color)
+
+    def table(r: int, head: Sequence[str], rows: Sequence[Sequence[Value]], formats: Sequence[str],
+              total: Optional[Sequence[Value]] = None) -> int:
+        """Rysuje tabelę od wiersza `r`; zwraca numer jej ostatniego wiersza."""
+        everything = list(rows) + ([total] if total is not None else [])
+        borders = _Borders(look, len(everything) + 1, len(head))
+        _header_row(ws, r, head, look, borders)
+        for j, values in enumerate(everything, start=1):
+            for c, value in enumerate(values):
+                cell = ws.cell(row=r + j, column=c + 1)
+                _set_text(cell, value)
+                cell.number_format, cell.border, cell.font, cell.alignment = formats[c], borders.at(j, c), body, plain
+                if look.stripes and j % 2 == 0:
+                    cell.fill = _solid(look.stripe_color)
+                if total is not None and j == len(everything):
+                    _style_total(cell, look, borders.at(j, c), plain)
+                widths[c + 1] = max(widths.get(c + 1, 16.0), min(len(str(display(value, None, lang))) + 3.0, 50.0))
+        for c, text in enumerate(head):
+            widths[c + 1] = max(widths.get(c + 1, 16.0), min(len(text) * 1.2 + 3, 40.0))
+        return r + len(everything)
+
+    r = HEADER_ROW
+    section(r, tr(lang, "summary.whole"))
+    facts: list[tuple[str, Value, str]] = [(tr(lang, "summary.count"), data.count, count_format)]
+    facts += [(tr(lang, "summary.sum", header=headers[c.name]), total, number_format(c, lang))
+              for c, total in data.sums]
+    for label, value, fmt in facts:
+        r += 1
+        a, b = ws.cell(row=r, column=1), ws.cell(row=r, column=2)
+        _set_text(a, label)
+        a.font, a.fill = _font(look.body, bold=True, color=look.title_color), _solid(look.stripe_color)
+        a.border = Border(bottom=line)
+        _set_text(b, value)
+        b.number_format, b.font, b.border, b.alignment = fmt, body, Border(bottom=line), plain
+        widths[1] = max(widths[1], min(len(label) + 3.0, 50.0))
+    r += 2
+
+    if data.groups is not None:
+        col, groups = data.groups
+        section(r, tr(lang, "summary.by", header=headers[col.name]))
+        head = [headers[col.name], tr(lang, "summary.count")] + [
+            f"{headers[c.name]} [{c.unit}]" if c.unit else headers[c.name] for c, _ in data.sums]
+        formats = ["@" if col.kind == "link" else number_format(col, lang), count_format] + [
+            number_format(c, lang) for c, _ in data.sums]
+        rows: list[list[Value]] = [
+            [tr(lang, "summary.empty_group") if v is None else v, n, *sums] for v, n, sums in groups]
+        total: list[Value] = [tr(lang, "summary.total"), data.count, *(t for _, t in data.sums)]
+        # Etykieta „(brak)” jest tekstem: format kolumny grupującej (np. daty) jej nie zmienia.
+        r = table(r + 1, head, rows, formats, total) + 2
+
+    if data.count:
+        section(r, tr(lang, "summary.gaps"))
+        sentences = []
+        if data.gaps:
+            share: list[list[Value]] = [[name, n, n / data.count] for name, n in data.gaps]
+            r = table(r + 1, [tr(lang, "summary.gaps.column"), tr(lang, "summary.gaps.empty"),
+                              tr(lang, "summary.gaps.share")], share, ["@", count_format, "0.0%"])
+            if len(data.gaps) < len(pkg.columns) - len(data.masked):
+                sentences.append(tr(lang, "summary.gaps.rest"))
+        else:
+            sentences.append(tr(lang, "summary.gaps.none"))
+        if data.masked:
+            sentences.append(tr(lang, "summary.gaps.masked", names=", ".join(data.masked)))
+        if sentences:
+            cell = ws.cell(row=r + 1, column=1)
+            _set_text(cell, " ".join(sentences))
+            cell.font = Font(name=look.body.font, italic=True, color=GREY_TEXT)
+    for c, width in widths.items():
+        ws.column_dimensions[get_column_letter(c)].width = width
+    _sheet_basics(ws, look, None)
+    _page_setup(ws, pkg.title, lang, None, landscape=False)
 
 
 # --- arkusze dodatkowe ------------------------------------------------------
@@ -820,7 +967,7 @@ def _write_about(
     r += 1
     if "guide" in items:
         names = {"data": tr(lang, "sheet.data"), "dictionary": tr(lang, "sheet.dictionary"),
-                 "changes": tr(lang, "sheet.changes")}
+                 "changes": tr(lang, "sheet.changes"), "summary": tr(lang, "sheet.summary")}
         guide = ["rows"]
         if look.as_table or look.autofilter:
             guide.append("filters")
@@ -828,6 +975,10 @@ def _write_about(
             guide.append("tips")
         if sheets.dictionary:
             guide.append("dictionary")
+        if pkg.summary.sheet:
+            guide.append("summary")
+        if _has_totals(pkg, pkg.rows):
+            guide.append("totals")
         if snapshot is not None:
             guide.append("changes")
         guide.append("source")

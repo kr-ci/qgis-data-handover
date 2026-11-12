@@ -228,7 +228,7 @@ def test_translation_complete_and_safe(lang: str) -> None:
     assert list(text) == list(en)
     for key, value in text.items():
         assert value.strip() and fields(value) == fields(en[key]), key
-    for key in ("sheet.data", "sheet.dictionary", "sheet.about", "sheet.changes"):
+    for key in ("sheet.data", "sheet.dictionary", "sheet.about", "sheet.changes", "sheet.summary"):
         assert len(text[key]) <= 31 and not set(text[key]) & set("[]:*?/\\"), key
     assert "&P" in text["footer.page"] and "&N" in text["footer.page"]
 
@@ -729,3 +729,111 @@ def test_totals_row_survives_comparison(tmp_path: Path) -> None:
     wb.save(edited)
     with pytest.raises(PackageError, match="zmieniono po eksporcie"):
         export(str(tmp_path / "v3.xlsx"), _totals_pkg(), Look(), previous=edited)
+
+
+# --- arkusz „Podsumowanie” (R8, zadanie 3) -------------------------------------
+
+
+def _summary_pkg(group_by: str = "przezn", **kw: object) -> Package:
+    pkg = parcels(summary=Summary(sheet=True, group_by=group_by), **kw)
+    next(c for c in pkg.columns if c.name == "pow_m2").summed = True
+    return pkg
+
+
+def test_summarize_groups_sums_gaps() -> None:
+    cols = [
+        Column("gm", "Gmina", "text"),
+        Column("ha", "Ha", "decimal", summed=True),
+        Column("sekret", "Sekret", "text", masked=True),
+        Column("pelna", "Pełna", "text"),
+    ]
+    gm = ["Kórnik", "Mosina", "Kórnik", None, "Mosina"]
+    ha = [1.5, 2.0, None, 0.25, "x"]
+    rows = [[g, h, None, "a"] for g, h in zip(gm, ha)]
+    pkg = Package("T", cols, rows, language="pl", summary=Summary(sheet=True, group_by="gm"))
+    data = xlsx.summarize(pkg, rows)
+    assert data.count == 5
+    assert [(c.name, v) for c, v in data.sums] == [("ha", pytest.approx(3.75))]
+    assert data.groups is not None
+    col, groups = data.groups
+    assert col.name == "gm"
+    assert [(g, n) for g, n, _ in groups] == [("Kórnik", 2), ("Mosina", 2), (None, 1)]
+    assert [s[0] for _, _, s in groups] == [1.5, 2.0, 0.25]
+    assert sum(s[0] for _, _, s in groups) == pytest.approx(data.sums[0][1])
+    assert data.gaps == [("Gmina", 1), ("Ha", 1)]
+    assert data.masked == ["Sekret"]
+
+
+def test_summary_sheet_layout(tmp_path: Path) -> None:
+    path = str(tmp_path / "a.xlsx")
+    export(path, _summary_pkg(), LOOK, sheets=ALL)
+    wb = load_workbook(path)
+    assert wb.sheetnames[:2] == ["Dane", "Podsumowanie"]
+    ws = wb["Podsumowanie"]
+    cells = {(c.row, c.column): c for row in ws.iter_rows() for c in row if c.value is not None}
+    texts = {c.value for c in cells.values() if isinstance(c.value, str)}
+    assert {tr("pl", "summary.whole"), tr("pl", "summary.count"), tr("pl", "summary.total"),
+            tr("pl", "summary.gaps"), tr("pl", "summary.by", header="Przeznaczenie"),
+            tr("pl", "summary.sum", header="Powierzchnia")} <= texts
+    assert ws["A1"].value == tr("pl", "sheet.summary")
+    assert "2 obiekty" in ws["A2"].value
+    count = next(c for c in cells.values() if c.value == 2 and c.number_format == "#,##0")
+    assert count.data_type == "n"
+    # etykieta value map, nie kod; sumy jako liczby z formatem kolumny
+    assert "zabudowa mieszkaniowa" in texts and "usługi" in texts
+    total = next(c for c in cells.values() if c.value == tr("pl", "summary.total"))
+    assert total.font.bold and total.border.top.style == "medium"
+    area = [c for c in cells.values() if isinstance(c.value, float)]
+    assert area and all(c.number_format == '#,##0.00 "m²"' for c in area)
+    assert sum(c.value for c in area if c.row == total.row) == pytest.approx(1523.456 + 980.1)
+    assert "Podsumowanie" in _all_text(path)
+
+
+def test_summary_never_shows_masked_column(tmp_path: Path) -> None:
+    path = str(tmp_path / "a.xlsx")
+    export(path, _summary_pkg("wlasc"), LOOK, sheets=ALL)
+    ws = load_workbook(path)["Podsumowanie"]
+    assert not any(isinstance(c.value, str) and c.value.startswith("Według") for row in ws.iter_rows() for c in row)
+    text = "\n".join(str(c.value) for row in ws.iter_rows() for c in row if c.value is not None)
+    assert "Kowalski" not in _all_text(path) and "J*** K***" not in text
+    assert text.count("Właściciel") == 1 and "pominięte" in text
+    assert tr("pl", "note.summary.group_missing", field="wlasc") not in _all_text(path)
+
+
+def test_summary_group_column_missing(tmp_path: Path) -> None:
+    path = str(tmp_path / "a.xlsx")
+    result = export(path, _summary_pkg("nieistnieje"), LOOK, sheets=ALL)
+    note = tr("pl", "note.summary.group_missing", field="nieistnieje")
+    assert note in result.notes and note in _all_text(path)
+    ws = load_workbook(path)["Podsumowanie"]
+    assert not any(isinstance(c.value, str) and c.value.startswith("Według") for row in ws.iter_rows() for c in row)
+
+
+def test_summary_group_by_date_and_bool(tmp_path: Path) -> None:
+    path = str(tmp_path / "a.xlsx")
+    export(path, _summary_pkg("data_akt"), LOOK)
+    ws = load_workbook(path)["Podsumowanie"]
+    dates = [c for row in ws.iter_rows() for c in row if c.value == dt.datetime(2024, 5, 3)]
+    assert dates and dates[0].number_format == "DD.MM.YYYY"
+    export(path, _summary_pkg("aktywna"), LOOK)
+    ws = load_workbook(path)["Podsumowanie"]
+    assert {"tak", "nie"} <= {c.value for row in ws.iter_rows() for c in row}
+
+
+def test_summary_empty_package(tmp_path: Path) -> None:
+    path = str(tmp_path / "a.xlsx")
+    export(path, _summary_pkg(rows=[]), LOOK)
+    ws = load_workbook(path)["Podsumowanie"]
+    values = [c.value for row in ws.iter_rows() for c in row if c.value is not None]
+    assert 0 in values and tr("pl", "summary.count") in values
+    assert not any(isinstance(v, str) and (v.startswith("Według") or v == tr("pl", "summary.gaps")) for v in values)
+
+
+def test_summary_off_by_default_and_gap_sentences(tmp_path: Path) -> None:
+    path = str(tmp_path / "a.xlsx")
+    export(path, parcels(), LOOK, sheets=ALL)
+    assert load_workbook(path).sheetnames == ["Dane", "Słownik", "Metryka", META_SHEET]
+    full = [["1", "0", 1.0, "a", dt.date(2024, 1, 1), None, True]]
+    export(path, _summary_pkg(rows=full), LOOK)
+    values = [c.value for row in load_workbook(path)["Podsumowanie"].iter_rows() for c in row]
+    assert any(isinstance(v, str) and tr("pl", "summary.gaps.none") in v for v in values)
