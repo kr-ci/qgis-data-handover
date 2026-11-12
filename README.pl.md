@@ -77,6 +77,32 @@ warstwie w projekcie.
 - Arkusz Zmiany porównuje powierzchnię i współrzędne jak każdą kolumnę;
   linku nie porównuje.
 
+## Wiersz sum i arkusz Podsumowanie
+
+W zakładce **Dane** grupa **Sumy i podsumowanie** dodaje dwie rzeczy; obie są
+domyślnie wyłączone. Ustawienia zapisują się przy warstwie w projekcie,
+a algorytm Processing też je czyta.
+
+- **Wiersz sum** pod tabelą Dane: `SUBTOTAL(109, …)`, więc dodaje tylko
+  wiersze, które zostają widoczne po filtrze w Excelu. Leży w tabeli Excela,
+  ale poza zakresem filtra.
+- Arkusz **Podsumowanie**: liczba obiektów i sumy, podział według jednej
+  kolumny (liczba i sumy na grupę, wiersz dla pustych wartości) oraz braki
+  danych w kolumnach. To liczby z chwili eksportu; filtr w Excelu ich nie
+  zmienia.
+
+Co jest sumowane: domyślnie pola dziesiętne oraz powierzchnia lub długość
+z geometrii; pola całkowite tylko po ręcznym zaznaczeniu w „Sumuj kolumny”.
+Identyfikatorów, kolumn maskowanych i kolumn z value map nie sumujemy nigdy.
+Kolumn maskowanych nie ma też na liście podziału.
+
+- Powierzchnia i długość z geometrii to sumy wartości zaokrąglonych tak, jak
+  w kolumnie. Mogą się różnić od `aggregate(sum, $area)` najwyżej o n × pół
+  jednostki ostatniego miejsca po przecinku (n to liczba obiektów).
+- Pole całkowite, w którym wszystkie wartości mieszczą się w 1000–2100, bez
+  jednostki i nie będące identyfikatorem, uznajemy za rok i pokazujemy bez
+  separatora tysięcy (2019, nie 2 019); podgląd w oknie robi tak samo.
+
 ## Processing, tryb wsadowy i `qgis_process`
 
 Ten sam eksport jest dostępny jako algorytm Processing **Data Handover →

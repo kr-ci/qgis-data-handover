@@ -78,6 +78,32 @@ The choice is saved with the layer in the project.
 - The Changes sheet compares area and coordinates like any other column;
   the map link is not compared.
 
+## Totals row and Summary sheet
+
+In the **Data** tab, the group **Totals and summary** adds two things; both
+are off by default. The settings are saved with the layer in the project and
+the Processing algorithm reads them too.
+
+- **Totals row** below the Data table: `SUBTOTAL(109, …)`, so it adds only the
+  rows left visible by a filter in Excel. It sits inside the Excel table but
+  outside the filter range.
+- **Summary** sheet: the number of features and the sums, a breakdown by one
+  column (count and sums per group, a row for empty values) and the missing
+  data per column. These are the figures from the moment of export; a filter
+  in Excel does not change them.
+
+What is summed: decimal fields and the area or length from geometry by
+default; integer fields only if you tick them in "Sum columns". Identifiers,
+masked columns and columns with a value map are never summed. Masked columns
+are not offered for the breakdown either.
+
+- Area and length from geometry are sums of the values rounded as shown in
+  the column. They can differ from `aggregate(sum, $area)` by at most n × half
+  a unit of the last decimal place (n is the number of features).
+- An integer field whose values are all between 1000 and 2100, with no unit
+  and not an identifier, is taken for a year and shown without a thousands
+  separator (2019, not 2,019); the window preview does the same.
+
 ## Processing, batch mode and `qgis_process`
 
 The same export is available as a Processing algorithm, **Data Handover →
