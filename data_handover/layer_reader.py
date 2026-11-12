@@ -36,7 +36,6 @@ from .core import privacy
 from .core.i18n import tr
 from .core.model import (
     GEO_PREFIX,
-    MAX_ROWS,
     Column,
     GeoColumns,
     Package,
@@ -44,6 +43,7 @@ from .core.model import (
     Value,
     from_dict,
     map_url,
+    row_limit,
     to_dict,
 )
 from .core.xlsx import CanceledError, PackageError
@@ -522,6 +522,7 @@ class PackagePlan:
              canceled: Optional[Callable[[], bool]] = None) -> Package:
         """Odczyt obiektów (może działać w tle). `progress` dostaje 0–100."""
         rows: list[list[Value]] = []
+        limit = row_limit(self.columns, self.summary)
         step = max(1, self.expected // 100)
         geo_values, geo_failed = self.geo.calculator() if self.geo is not None else (None, [0])
         for feature in self.source.getFeatures(self.request):
@@ -532,8 +533,8 @@ class PackagePlan:
             if geo_values is not None:
                 row += geo_values(feature.geometry() if feature.hasGeometry() else None)
             rows.append(row)
-            if len(rows) > MAX_ROWS:
-                raise PackageError(tr(self.language, "error.too_many_rows", n=len(rows), limit=MAX_ROWS))
+            if len(rows) > limit:
+                raise PackageError(tr(self.language, "error.too_many_rows", n=len(rows), limit=limit))
             if len(rows) % step == 0:
                 if canceled is not None and canceled():
                     raise CanceledError
@@ -615,10 +616,11 @@ def plan_package(
         column.summed = summary.measure and column.name.startswith((f"{GEO_PREFIX}area_", f"{GEO_PREFIX}length_"))
     columns += geo_columns
     request = _request(layer, scope, extent, extent_crs, indices, geometry=geo_plan is not None)
-    if scope == "selected" and layer.selectedFeatureCount() > MAX_ROWS:
-        raise PackageError(tr(language, "error.too_many_rows", n=layer.selectedFeatureCount(), limit=MAX_ROWS))
-    if scope == "all" and layer.featureCount() > MAX_ROWS:
-        raise PackageError(tr(language, "error.too_many_rows", n=layer.featureCount(), limit=MAX_ROWS))
+    limit = row_limit(columns, summary)
+    if scope == "selected" and layer.selectedFeatureCount() > limit:
+        raise PackageError(tr(language, "error.too_many_rows", n=layer.selectedFeatureCount(), limit=limit))
+    if scope == "all" and layer.featureCount() > limit:
+        raise PackageError(tr(language, "error.too_many_rows", n=layer.featureCount(), limit=limit))
 
     # Filtr warstwy wpisany do „Metryki” mógłby zdradzić wartość pola osobowego,
     # którego nie eksportujemy jawnie (np. "email" = 'anna@example.com').

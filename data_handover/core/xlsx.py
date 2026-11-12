@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import datetime as dt
+import hashlib
 import math
 import os
 import uuid
@@ -30,7 +31,20 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from . import diff, privacy
 from .i18n import DATE_FORMATS, count_label, format_number, tr
-from .model import DICTIONARY_ITEMS, GEO_PREFIX, HEADER_ROW, MAX_ROWS, CellLook, Column, Look, Package, Sheets, Value
+from .model import (
+    DICTIONARY_ITEMS,
+    GEO_PREFIX,
+    HEADER_ROW,
+    MAX_ROWS,
+    SHEET_ROWS,
+    CellLook,
+    Column,
+    Look,
+    Package,
+    Sheets,
+    Value,
+    row_limit,
+)
 
 FORMAT_VERSION = "1"
 META_SHEET = "_handover"
@@ -225,24 +239,32 @@ def read_snapshot(path: str) -> Snapshot:
         extra = 1 if meta.get("totals_row") == "1" else 0  # wiersz sum pod danymi
         width = len(columns)
         # Komórki z formułami (wiersz sum) rozpoznajemy po typie, nie po tekście: zwykły tekst
-        # zaczynający się od „=” jest zapisany jako tekst.
+        # zaczynający się od „=” jest zapisany jako tekst. Czytamy do końca arkusza,
+        # żeby zauważyć dopiski także za pustymi wierszami pod danymi.
+        used = count + 2 + extra  # nagłówek, dane, wiersz sum i jeden wiersz zapasu
         cells = [
             list(row) + [None] * (width + 1 - len(row))
-            for row in wb[meta["data_sheet"]].iter_rows(
-                min_row=header_row, max_row=header_row + count + 1 + extra, max_col=width + 1
-            )
+            for row in wb[meta["data_sheet"]].iter_rows(min_row=header_row, max_col=width + 1)
         ]
+        cells += [[None] * (width + 1)] * (used - len(cells))
         found = [[c.value if c is not None else None for c in row] for row in cells]
-        has_formula = [any(getattr(c, "data_type", "") == "f" for c in row) for row in cells]
-        has_formula += [False] * (count + 2 + extra - len(has_formula))
-        found += [[None] * (width + 1)] * (count + 2 + extra - len(found))
+        is_formula = [[getattr(c, "data_type", "") == "f" for c in row] for row in cells]
         # Ręczne zmiany po eksporcie (przestawione lub dopisane kolumny, dopisane
-        # lub usunięte wiersze) dałyby cicho błędny raport — odrzucamy taki plik.
+        # lub usunięte wiersze, zmienione wartości) dałyby cicho błędny raport — odrzucamy taki plik.
         edited = found[0] != [headers[c] for c in columns] + [None]
         edited |= any(all(v is None for v in row[:width]) for row in found[1 : count + 1])
-        edited |= bool(count) and any(v is not None for v in found[count + 1 + extra])
-        # Wiersz sum musi stać zaraz pod danymi; inaczej ktoś usunął wiersz danych.
-        edited |= bool(extra) and (not has_formula[count + 1] or any(has_formula[1 : count + 1]))
+        # Pod danymi (i wierszem sum) nie może być niczego; przy pustym eksporcie wiersz 1 to komunikat „brak danych”.
+        edited |= any(v is not None for row in found[count + 1 + extra if count else 2 :] for v in row)
+        if extra:
+            # Wiersz sum stoi zaraz pod danymi i zawiera wyłącznie sumy częściowe; inaczej ktoś usunął wiersz
+            # danych albo podmienił formułę. Kolumny z formułą przy eksporcie muszą ją nadal mieć.
+            total = is_formula[count + 1]
+            edited |= not any(total) or any(any(row) for row in is_formula[1 : count + 1])
+            edited |= any(is_f and not str(v).startswith("=SUBTOTAL(109,") for is_f, v in zip(total, found[count + 1]))
+            wanted = [int(n) for n in meta.get("totals_cols", "").split(",") if n]
+            edited |= any(not total[n - 1] for n in wanted)
+        # Brak skrótu (plik sprzed jego wprowadzenia) — wartości przyjmujemy bez sprawdzenia.
+        edited |= bool(meta.get("digest")) and meta["digest"] != _digest([row[:width] for row in found[1 : count + 1]])
         if edited:
             raise EditedFileError(name)
         rows = [cast(list[Value], row[:width]) for row in found[1 : count + 1]]
@@ -314,8 +336,9 @@ def export(
     look = look or Look()
     sheets = sheets or Sheets()
     lang = pkg.language
-    if len(pkg.rows) > MAX_ROWS:
-        raise PackageError(tr(lang, "error.too_many_rows", n=len(pkg.rows), limit=MAX_ROWS))
+    limit = row_limit(pkg.columns, pkg.summary)  # wiersz sum pod danymi zabiera jedno miejsce
+    if len(pkg.rows) > limit:
+        raise PackageError(tr(lang, "error.too_many_rows", n=len(pkg.rows), limit=limit))
     pkg, link_notes = _drop_excess_links(pkg)
     rows, notes = prepare_rows(pkg)
     pkg = _plain_years(pkg, rows)
@@ -323,6 +346,9 @@ def export(
     summary_data = summarize(pkg, rows) if pkg.summary.sheet else None
     if summary_data is not None and summary_data.group_missing:
         notes.append(tr(lang, "note.summary.group_missing", field=pkg.summary.group_by))
+    if summary_data is not None and (needed := _summary_rows(pkg, summary_data)) > SHEET_ROWS:
+        raise PackageError(tr(lang, "error.summary_too_long", name=tr(lang, "sheet.summary"),
+                              n=needed, limit=SHEET_ROWS))
     changes: Optional[list[diff.Change]] = None
     snapshot: Optional[Snapshot] = None
     if previous:
@@ -354,7 +380,13 @@ def export(
         _write_about(wb.create_sheet(), pkg, look, sheets, notes, snapshot)
     if changes is not None and snapshot is not None:
         _write_changes(wb.create_sheet(), pkg, look, changes, snapshot)
-    _write_meta(wb.create_sheet(META_SHEET), pkg, len(rows), look.header_row, _has_totals(pkg, rows))
+    totals = _has_totals(pkg, rows)
+    # Skrót liczymy z komórek tak, jak trafiły do arkusza (linki, maski, teksty „=…”).
+    stored = [list(r) for r in ws.iter_rows(min_row=look.header_row + 1, max_row=look.header_row + len(rows),
+                                            max_col=len(pkg.columns), values_only=True)]
+    total_cols = [c for c in range(1, len(pkg.columns) + 1)
+                  if totals and ws.cell(row=look.header_row + len(rows) + 1, column=c).data_type == "f"]
+    _write_meta(wb.create_sheet(META_SHEET), pkg, len(rows), look.header_row, totals, _digest(stored), total_cols)
     wb.properties.title = _clean(pkg.title)
     wb.properties.creator = "Data Handover (QGIS)"
     _save(wb, path, canceled)
@@ -508,8 +540,8 @@ def _header_row(ws: Worksheet, row: int, headers: Sequence[str], look: Look, bor
 
 
 def _structured(name: str) -> str:
-    """Nazwa kolumny w odwołaniu strukturalnym: znaki specjalne ([ ] # ' i odwrotny apostrof) poprzedza `'`."""
-    return "".join(f"'{ch}" if ch in "[]#'`" else ch for ch in name)
+    """Nazwa kolumny w odwołaniu strukturalnym: znaki specjalne ([ ] # @ ' i odwrotny apostrof) poprzedza `'`."""
+    return "".join(f"'{ch}" if ch in "[]#@'`" else ch for ch in name)
 
 
 def _grid(ws: Worksheet, look: Look, header_row: int, cols: int, rows: int, table_name: str,
@@ -1056,14 +1088,67 @@ def _snapshot_date(snapshot: Snapshot, lang: str) -> str:
         return snapshot.exported_at
 
 
-def _write_meta(ws: Worksheet, pkg: Package, count: int, header_row: int, totals: bool = False) -> None:
-    """Ukryty arkusz techniczny: pozwala następnym razem porównać wersje."""
+def _to_second(moment: dt.datetime) -> dt.datetime:
+    return moment.replace(microsecond=0) + dt.timedelta(seconds=moment.microsecond >= 500_000)
+
+
+def _digest_cell(value: object) -> str:
+    """Wartość komórki w postaci, która nie zmienia się po zapisie przez Excela.
+
+    Excel trzyma 15 cyfr znaczących, daty i czasy z dokładnością do sekundy,
+    a pusty tekst zapisuje jako pustą komórkę; openpyxl czyta datę jako `datetime`.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (int, float)):
+        return format(float(value), ".15g")
+    if isinstance(value, dt.datetime):
+        return _to_second(value).isoformat()
+    if isinstance(value, dt.date):
+        return dt.datetime(value.year, value.month, value.day).isoformat()
+    if isinstance(value, dt.time):
+        return _to_second(dt.datetime.combine(dt.date(2000, 1, 1), value)).time().isoformat()
+    return str(value).replace("\r\n", "\n").replace("\r", "\n")  # XML nie zachowuje samego CR
+
+
+def _digest(rows: Sequence[Sequence[object]]) -> str:
+    """Skrót SHA-256 wartości komórek danych (kolejność wierszy i kolumn ma znaczenie)."""
+    text = "\x1e".join("\x1f".join(_digest_cell(v) for v in row) for row in rows)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _summary_rows(pkg: Package, data: SummaryData) -> int:
+    """Numer ostatniego wiersza arkusza „Podsumowanie” — ten sam rachunek co w `_write_summary()`."""
+    r = HEADER_ROW + 1 + len(data.sums)  # całość: nagłówek sekcji, liczba wierszy i sumy
+    if not data.count:
+        return r
+    r += 2  # odstęp
+    if data.groups is not None:
+        r += 1 + len(data.groups[1]) + 1 + 2  # nagłówek sekcji, grupy, „Razem”, odstęp
+    if not data.gaps:
+        return r + 1  # zdanie „brak pustych komórek”
+    r += 1 + len(data.gaps)  # nagłówek sekcji i tabela braków
+    sentence = len(data.gaps) < len(pkg.columns) - len(data.masked) or bool(data.masked)
+    return r + int(sentence)
+
+
+def _write_meta(ws: Worksheet, pkg: Package, count: int, header_row: int, totals: bool = False,
+                digest: str = "", total_cols: Sequence[int] = ()) -> None:
+    """Ukryty arkusz techniczny: pozwala następnym razem porównać wersje.
+
+    `digest` to skrót wartości z „Danych”, `total_cols` — numery kolumn (od 1) z formułą w wierszu sum;
+    oba służą do odrzucenia pliku zmienionego ręcznie po eksporcie.
+    """
     rows: list[tuple[Value, ...]] = [
         ("format", FORMAT_VERSION),
         ("data_sheet", tr(pkg.language, "sheet.data")),
         ("header_row", header_row),
         ("rows", count),
         ("totals_row", int(totals)),
+        ("totals_cols", ",".join(map(str, total_cols))),
+        ("digest", digest),
         ("key", pkg.key or ""),
         ("exported_at", pkg.exported_at.isoformat()),
         ("language", pkg.language),

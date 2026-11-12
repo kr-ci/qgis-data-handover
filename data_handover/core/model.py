@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field, fields, is_dataclass, replace
 from typing import Any, Optional, Union
 
@@ -13,7 +14,8 @@ KINDS = ("text", "integer", "decimal", "date", "datetime", "time", "boolean", "l
 # Arkusz Excela ma 1 048 576 wierszy; odejmujemy wiersze tytułu i nagłówka.
 # Bez tytułu nad tabelą nagłówek trafia do wiersza 1 (`Look.header_row`).
 HEADER_ROW = 4
-MAX_ROWS = 1_048_576 - HEADER_ROW
+SHEET_ROWS = 1_048_576
+MAX_ROWS = SHEET_ROWS - HEADER_ROW
 
 
 @dataclass
@@ -42,6 +44,12 @@ class Summary:
     sheet: bool = False
     group_by: str = ""
     measure: bool = True
+
+
+def row_limit(columns: Sequence[Column], summary: Summary) -> int:
+    """Ile wierszy danych się zmieści: wiersz sum pod danymi zabiera jedno miejsce."""
+    totals = summary.row and any(c.summed and not c.masked for c in columns)
+    return MAX_ROWS - int(totals)
 
 
 @dataclass

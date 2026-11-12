@@ -195,6 +195,7 @@
  "ui.error.busy": "다른 내보내기가 아직 진행 중입니다. 끝날 때까지 기다리거나 메시지 표시줄에서 취소하세요.",
  "ui.error.openpyxl": "XLSX 파일을 쓰는 데 사용하는 openpyxl 라이브러리가 없습니다.\n\nWindows (OSGeo4W): OSGeo4W 설치 프로그램을 실행하여 python3-openpyxl 패키지를 추가하세요.\nLinux: python3-openpyxl 패키지를 설치하세요.\nmacOS: QGIS Python 콘솔에서 다음을 실행하세요: import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "범위에 피처가 {n}개 있지만 Excel 시트에는 최대 {limit}개까지만 들어갑니다. 범위(선택, 지도 범위, 레이어 필터)를 좁혀 주세요.",
+ "error.summary_too_long": "시트 “{name}”은(는) {n}개 행이 되어 Excel이 담을 수 있는 한도({limit})를 넘습니다. 나누는 기준으로 고유 값이 더 적은 열을 선택해 주세요.",
  "error.not_handover": "파일 “{file}”은(는) Data Handover에서 만든 파일이 아니므로 비교할 수 없습니다.",
  "error.key_missing": "이전 파일에 키 열 “{key}”이(가) 없습니다.",
  "error.key_duplicate": "키 열 “{key}”에 중복되거나 비어 있는 값이 있습니다({n}개 행). 피처를 고유하게 식별하지 못하므로 다른 키를 선택하세요.",

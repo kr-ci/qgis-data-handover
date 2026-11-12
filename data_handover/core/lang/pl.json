@@ -195,6 +195,7 @@
  "ui.error.busy": "Trwa inny eksport. Poczekaj, aż się skończy, albo anuluj go w pasku komunikatów.",
  "ui.error.openpyxl": "Brakuje biblioteki openpyxl, z której wtyczka zapisuje pliki XLSX.\n\nWindows (OSGeo4W): uruchom instalator OSGeo4W i dodaj pakiet python3-openpyxl.\nLinux: zainstaluj pakiet python3-openpyxl.\nmacOS: w konsoli Pythona QGIS wpisz: import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "Zakres ma {n} obiektów, a arkusz Excela mieści najwyżej {limit}. Zawęź zakres (zaznaczenie, zasięg mapy, filtr warstwy).",
+ "error.summary_too_long": "Arkusz „{name}” miałby {n} wierszy — więcej, niż mieści Excel ({limit}). Wybierz do podziału kolumnę o mniejszej liczbie różnych wartości.",
  "error.not_handover": "Plik „{file}” nie pochodzi z Data Handover, więc nie da się go porównać.",
  "error.key_missing": "Poprzedni plik nie zawiera kolumny-klucza „{key}”.",
  "error.key_duplicate": "Kolumna-klucz „{key}” ma powtarzające się lub puste wartości ({n} wierszy) — nie wskazuje obiektów jednoznacznie. Wybierz inny klucz.",

@@ -195,6 +195,7 @@
  "ui.error.busy": "別のエクスポートがまだ実行中です。終了を待つか、メッセージバーでキャンセルしてください。",
  "ui.error.openpyxl": "XLSX ファイルの書き込みに使用する openpyxl ライブラリが見つかりません。\n\nWindows (OSGeo4W): OSGeo4W インストーラを実行し、python3-openpyxl パッケージを追加してください。\nLinux: python3-openpyxl パッケージをインストールしてください。\nmacOS: QGIS の Python コンソールで次を実行してください: import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "範囲に {n} 件の地物がありますが、Excel のシートに入るのは最大 {limit} 件です。範囲 (選択、地図の表示範囲、レイヤのフィルタ) を絞り込んでください。",
+ "error.summary_too_long": "シート「{name}」は {n} 行になり、Excel の上限 ({limit}) を超えます。分割に使う列は、異なる値の数がより少ないものを選んでください。",
  "error.not_handover": "ファイル「{file}」は Data Handover で作成されたものではないため、比較できません。",
  "error.key_missing": "前回のファイルにキー列「{key}」がありません。",
  "error.key_duplicate": "キー列「{key}」に重複した値または空の値があります ({n} 行)。地物を一意に識別できません。別のキーを選択してください。",

@@ -195,6 +195,7 @@
  "ui.error.busy": "另一个导出仍在进行。请等待其完成，或在消息栏中取消。",
  "ui.error.openpyxl": "缺少用于写入 XLSX 文件的 openpyxl 库。\n\nWindows (OSGeo4W)：运行 OSGeo4W 安装程序并添加 python3-openpyxl 软件包。\nLinux：安装 python3-openpyxl 软件包。\nmacOS：在 QGIS Python 控制台中运行：import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "该范围有 {n} 个要素，而 Excel 工作表最多容纳 {limit} 行。请缩小范围（选择、地图范围、图层过滤器）。",
+ "error.summary_too_long": "工作表“{name}”将有 {n} 行，超过 Excel 的容量（{limit}）。请选择不同取值更少的列作为拆分依据。",
  "error.not_handover": "文件“{file}”不是由 Data Handover 创建的，因此无法对比。",
  "error.key_missing": "上一个文件中没有关键列“{key}”。",
  "error.key_duplicate": "关键列“{key}”存在重复或空值（{n} 行）——它无法唯一标识要素。请选择其他关键列。",

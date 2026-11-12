@@ -195,6 +195,7 @@
  "ui.error.busy": "Another export is still running. Wait until it finishes or cancel it in the message bar.",
  "ui.error.openpyxl": "The openpyxl library, used to write XLSX files, is missing.\n\nWindows (OSGeo4W): run the OSGeo4W installer and add the python3-openpyxl package.\nLinux: install the python3-openpyxl package.\nmacOS: in the QGIS Python console run: import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "The scope has {n} features, but an Excel sheet holds at most {limit}. Narrow the scope (selection, map extent, layer filter).",
+ "error.summary_too_long": "Sheet “{name}” would have {n} rows, more than Excel holds ({limit}). Choose a column with fewer distinct values to split by.",
  "error.not_handover": "File “{file}” was not created by Data Handover, so it cannot be compared.",
  "error.key_missing": "The previous file has no key column “{key}”.",
  "error.key_duplicate": "Key column “{key}” has repeated or empty values ({n} rows) — it does not identify features uniquely. Choose another key.",

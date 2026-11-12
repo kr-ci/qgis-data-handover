@@ -876,3 +876,141 @@ def test_summary_off_by_default_and_gap_sentences(tmp_path: Path) -> None:
     export(path, _summary_pkg(rows=full), LOOK)
     values = [c.value for row in load_workbook(path)["Podsumowanie"].iter_rows() for c in row]
     assert any(isinstance(v, str) and tr("pl", "summary.gaps.none") in v for v in values)
+
+
+# --- poprawki R8 po przeglądzie: znak @, integralność poprzedniego pliku, limity ---
+
+
+def test_structured_reference_escapes_at_sign(tmp_path: Path) -> None:
+    assert xlsx._structured("@x") == "'@x" and xlsx._structured("a@b") == "a'@b"
+    for header, expected in (
+        ("@pow", "=SUBTOTAL(109,HandoverData[['@pow]])"),
+        ("pow@m2", "=SUBTOTAL(109,HandoverData[[pow'@m2]])"),
+    ):
+        pkg = _totals_pkg()
+        next(c for c in pkg.columns if c.name == "pow_m2").header = header
+        path = str(tmp_path / "a.xlsx")
+        export(path, pkg, Look())
+        assert load_workbook(path)["Dane"].cell(row=HEADER_ROW + 3, column=3).value == expected
+
+
+def _rich_pkg() -> Package:
+    """Różne typy komórek: liczby, data, czas, link, tekst z „=”, wartość zamaskowana, bool."""
+    cols = [
+        Column("id", "Id", "text", is_identifier=True),
+        Column("v", "V", "decimal", summed=True),
+        Column("d", "D", "date"),
+        Column("dt", "DT", "datetime"),
+        Column("t", "T", "time"),
+        Column("u", "U", "link"),
+        Column("f", "F", "text"),
+        Column("m", "M", "text", masked=True),
+        Column("b", "B", "boolean"),
+    ]
+    rows: list[list[object]] = [
+        ["a", 0.1 + 0.2, dt.date(2024, 5, 3), dt.datetime(2024, 5, 3, 10, 11, 12, 700000),
+         dt.time(8, 30, 15), "https://example.com/1", "=1+1", "Jan Kowalski", True],
+        ["b", 1523.456, None, None, None, None, "  spacje\r\ni linia\tz tabem ", "Anna Nowak", False],
+    ]
+    return Package("T", cols, rows, key="id", language="pl",  # type: ignore[arg-type]
+                   summary=Summary(row=True))
+
+
+def _resave(src: str, dst: str, mutate: object = None) -> str:
+    wb = load_workbook(src)
+    if mutate is not None:
+        mutate(wb)  # type: ignore[operator]
+    wb.save(dst)
+    return dst
+
+
+def test_digest_unchanged_file_resaved_is_accepted(tmp_path: Path) -> None:
+    first = str(tmp_path / "v1.xlsx")
+    export(first, _rich_pkg(), Look())
+    again = _resave(first, str(tmp_path / "v1b.xlsx"))
+    assert len(read_snapshot(again).rows) == 2
+    # Excel trzyma 15 cyfr znaczących: 0.1+0.2 wraca jako 0.3.
+    def rounded(wb: object) -> None:
+        wb["Dane"].cell(row=HEADER_ROW + 1, column=2).value = 0.3  # type: ignore[index]
+    assert len(read_snapshot(_resave(first, str(tmp_path / "v1c.xlsx"), rounded)).rows) == 2
+
+
+def test_digest_catches_changed_value(tmp_path: Path) -> None:
+    first = str(tmp_path / "v1.xlsx")
+    export(first, _totals_pkg(), Look())
+
+    def change(wb: object) -> None:
+        wb["Dane"].cell(row=HEADER_ROW + 2, column=3).value = 999  # type: ignore[index]
+    with pytest.raises(PackageError, match="zmieniono po eksporcie"):
+        export(str(tmp_path / "v2.xlsx"), _totals_pkg(), Look(),
+               previous=_resave(first, str(tmp_path / "e.xlsx"), change))
+
+
+def test_old_file_without_digest_is_accepted(tmp_path: Path) -> None:
+    first = str(tmp_path / "v1.xlsx")
+    export(first, _totals_pkg(), Look())
+
+    def drop(wb: object) -> None:
+        ws = wb[META_SHEET]  # type: ignore[index]
+        for row in reversed(list(ws.iter_rows())):
+            if row[0].value in ("digest", "totals_cols"):
+                ws.delete_rows(row[0].row)
+    old = _resave(first, str(tmp_path / "old.xlsx"), drop)
+    assert "digest" not in {r[0].value for r in load_workbook(old)[META_SHEET].iter_rows()}
+    assert len(read_snapshot(old).rows) == 2
+
+
+@pytest.mark.parametrize("totals", [True, False])
+def test_text_below_data_after_blank_rows_is_rejected(tmp_path: Path, totals: bool) -> None:
+    pkg = _totals_pkg() if totals else parcels()
+    first = str(tmp_path / "v1.xlsx")
+    export(first, pkg, Look())
+
+    def append(wb: object) -> None:
+        wb["Dane"].cell(row=HEADER_ROW + 2 + totals + 3, column=2).value = "dopisek"  # type: ignore[index]
+    with pytest.raises(PackageError, match="zmieniono po eksporcie"):
+        export(str(tmp_path / "v2.xlsx"), pkg, Look(), previous=_resave(first, str(tmp_path / "e.xlsx"), append))
+
+
+def test_totals_formula_replaced_is_rejected(tmp_path: Path) -> None:
+    first = str(tmp_path / "v1.xlsx")
+    export(first, _totals_pkg(), Look())
+
+    def fake(wb: object) -> None:
+        wb["Dane"].cell(row=HEADER_ROW + 3, column=3).value = "=1+1"  # type: ignore[index]
+
+    def literal(wb: object) -> None:
+        wb["Dane"].cell(row=HEADER_ROW + 3, column=3).value = 2503.5  # type: ignore[index]
+    for i, mutate in enumerate((fake, literal)):
+        with pytest.raises(PackageError, match="zmieniono po eksporcie"):
+            export(str(tmp_path / "v2.xlsx"), _totals_pkg(), Look(),
+                   previous=_resave(first, str(tmp_path / f"e{i}.xlsx"), mutate))
+
+    def simplified(wb: object) -> None:  # Excel upraszcza HandoverData[[X]] do HandoverData[X]
+        wb["Dane"].cell(row=HEADER_ROW + 3, column=3).value = (  # type: ignore[index]
+            "=SUBTOTAL(109,HandoverData[Powierzchnia])")
+    assert len(read_snapshot(_resave(first, str(tmp_path / "s.xlsx"), simplified)).rows) == 2
+
+
+def test_row_limit_reserves_totals_row(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from data_handover.core import model
+    monkeypatch.setattr(model, "MAX_ROWS", 3)
+    rows = [[f"{i}", "0214011", 1.0, "usługi", None, None, True] for i in range(3)]
+    export(str(tmp_path / "a.xlsx"), parcels(rows=rows), Look())  # bez wiersza sum: 3 wiersze mieszczą się
+    with pytest.raises(PackageError, match="najwyżej 2"):
+        export(str(tmp_path / "b.xlsx"), _totals_pkg(rows=rows), Look())
+    export(str(tmp_path / "c.xlsx"), _totals_pkg(rows=rows[:2]), Look())
+
+
+def test_summary_sheet_too_long_is_an_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    path = str(tmp_path / "a.xlsx")
+    pkg = _summary_pkg()
+    export(path, pkg, Look())
+    sheet = load_workbook(path)[tr("pl", "sheet.summary")]
+    data = xlsx.summarize(pkg, xlsx.prepare_rows(pkg)[0])
+    assert xlsx._summary_rows(pkg, data) == sheet.max_row
+    monkeypatch.setattr(xlsx, "SHEET_ROWS", sheet.max_row)
+    export(path, pkg, Look())  # dokładnie na granicy
+    monkeypatch.setattr(xlsx, "SHEET_ROWS", sheet.max_row - 1)
+    with pytest.raises(PackageError, match="mniejszej liczbie"):
+        export(path, pkg, Look())

@@ -195,6 +195,7 @@
  "ui.error.busy": "Outra exportação ainda está em andamento. Aguarde a conclusão ou cancele-a na barra de mensagens.",
  "ui.error.openpyxl": "Falta a biblioteca openpyxl, usada para escrever ficheiros XLSX.\n\nWindows (OSGeo4W): execute o instalador do OSGeo4W e adicione o pacote python3-openpyxl.\nLinux: instale o pacote python3-openpyxl.\nmacOS: na consola Python do QGIS execute: import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "O âmbito tem {n} feições, mas uma folha do Excel comporta no máximo {limit}. Reduza o âmbito (seleção, extensão do mapa, filtro da camada).",
+ "error.summary_too_long": "A folha “{name}” teria {n} linhas, mais do que o Excel comporta ({limit}). Escolha, para dividir, uma coluna com menos valores distintos.",
  "error.not_handover": "O ficheiro “{file}” não foi criado pelo Data Handover, por isso não pode ser comparado.",
  "error.key_missing": "O ficheiro anterior não tem a coluna-chave “{key}”.",
  "error.key_duplicate": "A coluna-chave “{key}” tem valores repetidos ou vazios ({n} linhas) — não identifica as feições de forma única. Escolha outra chave.",

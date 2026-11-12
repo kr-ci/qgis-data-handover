@@ -195,6 +195,7 @@
  "ui.error.busy": "Un autre export est encore en cours. Attendez qu’il se termine ou annulez-le dans la barre de messages.",
  "ui.error.openpyxl": "La bibliothèque openpyxl, utilisée pour écrire les fichiers XLSX, est absente.\n\nWindows (OSGeo4W) : lancez l'installateur OSGeo4W et ajoutez le paquet python3-openpyxl.\nLinux : installez le paquet python3-openpyxl.\nmacOS : dans la console Python de QGIS, exécutez : import pip; pip.main(['install', 'openpyxl'])",
  "error.too_many_rows": "Le périmètre compte {n} entités, mais une feuille Excel en contient au plus {limit}. Restreignez le périmètre (sélection, emprise de la carte, filtre de la couche).",
+ "error.summary_too_long": "La feuille « {name} » compterait {n} lignes, soit plus que ce qu’Excel peut contenir ({limit}). Choisissez, pour le regroupement, une colonne ayant moins de valeurs distinctes.",
  "error.not_handover": "Le fichier « {file} » n'a pas été créé par Data Handover et ne peut donc pas être comparé.",
  "error.key_missing": "Le fichier précédent n'a pas de colonne clé « {key} ».",
  "error.key_duplicate": "La colonne clé « {key} » contient des valeurs répétées ou vides ({n} lignes) — elle n'identifie pas les entités de façon unique. Choisissez une autre clé.",
