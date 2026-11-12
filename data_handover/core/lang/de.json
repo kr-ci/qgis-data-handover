@@ -269,6 +269,7 @@
  "summary.gaps.none": "Alle Spalten sind in jeder Zeile ausgefüllt.",
  "summary.gaps.masked": "Maskierte Spalten ({names}) ausgelassen.",
  "note.summary.group_missing": "Die Gruppierungsspalte „{field}“ ist nicht in der Datei enthalten — die Zusammenfassung hat keine Aufteilung nach Gruppen.",
+ "note.summary.big_numbers": "Die Spalte „{header}“ enthält Zahlen über 10^15, die als Text gespeichert sind (Excel würde Ziffern verlieren) — sie wird nicht summiert.",
  "data.subtitle.summary": " · Summen: Blatt „{name}“",
  "about.guide.summary": "Das Blatt „{summary}“ nennt die Anzahl der Objekte und die Summen insgesamt und je Gruppe und listet leere Zellen auf.",
  "about.guide.totals": "Die letzte Zeile des Blatts „{data}“ summiert nur die nach dem Filtern sichtbaren Zeilen."

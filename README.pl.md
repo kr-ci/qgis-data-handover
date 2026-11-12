@@ -94,7 +94,9 @@ a algorytm Processing też je czyta.
 Co jest sumowane: domyślnie pola dziesiętne oraz powierzchnia lub długość
 z geometrii; pola całkowite tylko po ręcznym zaznaczeniu w „Sumuj kolumny”.
 Identyfikatorów, kolumn maskowanych i kolumn z value map nie sumujemy nigdy.
-Kolumn maskowanych nie ma też na liście podziału.
+Kolumn maskowanych nie ma też na liście podziału. Liczby całkowite od 10^15
+wzwyż zapisujemy jako tekst (Excel zgubiłby cyfry), więc kolumny, która je
+zawiera, nie sumujemy; mówi o tym uwaga w „Metryce”.
 
 - Powierzchnia i długość z geometrii to sumy wartości zaokrąglonych tak, jak
   w kolumnie. Mogą się różnić od `aggregate(sum, $area)` najwyżej o n × pół

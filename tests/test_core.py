@@ -1052,3 +1052,48 @@ def test_carriage_return_is_normalized_in_cells(tmp_path: Path) -> None:
     assert ws.cell(row=HEADER_ROW + 1, column=1).value == "a\nb"
     assert ws.cell(row=HEADER_ROW + 1, column=4).value == "x\ny"
     assert len(read_snapshot(first).rows) == 1
+
+
+# --- kolumna z liczbami ≥ 10^15 nie jest sumowana (R8, decyzja właściciela) --------
+
+
+def _big_pkg(big: list[int], **kw: object) -> Package:
+    cols = [
+        Column("k", "Klucz", "text", is_identifier=True),
+        Column("duza", "Duża", "integer", summed=True),
+        Column("mala", "Mała", "integer", summed=True),
+    ]
+    rows = [[f"id{i}", b, i + 1] for i, b in enumerate(big)]
+    return Package("T", cols, rows, language="pl", key="k", summary=Summary(row=True, sheet=True), **kw)  # type: ignore[arg-type]
+
+
+def _totals_row(path: str) -> list[object]:
+    ws = load_workbook(path)["Dane"]
+    return [c.value for c in ws[LOOK.header_row + 3]]  # 2 wiersze danych, potem sumy
+
+
+def test_big_int_column_is_not_summed(tmp_path: Path) -> None:
+    path = str(tmp_path / "a.xlsx")
+    result = export(path, _big_pkg([10**15, 7]), LOOK, sheets=ALL)
+    totals = _totals_row(path)
+    assert totals[1] is None and str(totals[2]).startswith("=SUBTOTAL(109")
+    ws = load_workbook(path)["Podsumowanie"]
+    text = "\n".join(str(c.value) for row in ws.iter_rows() for c in row if c.value is not None)
+    assert tr("pl", "summary.sum", header="Duża") not in text
+    assert tr("pl", "summary.sum", header="Mała") in text
+    note = tr("pl", "note.summary.big_numbers", header="Duża")
+    assert result.notes.count(note) == 1 and note in _all_text(path)
+
+
+def test_small_int_column_still_summed(tmp_path: Path) -> None:
+    path = str(tmp_path / "a.xlsx")
+    result = export(path, _big_pkg([10**15 - 1, 7]), LOOK, sheets=ALL)
+    assert str(_totals_row(path)[1]).startswith("=SUBTOTAL(109")
+    assert not any("10^15" in n for n in result.notes)
+
+
+def test_big_int_column_previous_file_comparison(tmp_path: Path) -> None:
+    a, b = str(tmp_path / "a.xlsx"), str(tmp_path / "b.xlsx")
+    export(a, _big_pkg([10**15, 7]), LOOK)
+    result = export(b, _big_pkg([10**15, 8]), LOOK, previous=a)
+    assert len(result.changes) == 1

@@ -269,6 +269,7 @@
  "summary.gaps.none": "모든 열이 모든 행에 값이 있습니다.",
  "summary.gaps.masked": "마스킹된 열({names})은 제외했습니다.",
  "note.summary.group_missing": "그룹 기준 열 “{field}”이(가) 파일에 포함되지 않아 요약에 그룹별 구분이 없습니다.",
+ "note.summary.big_numbers": "열 “{header}”에 10^15보다 큰 숫자가 텍스트로 저장되어 있습니다(Excel에서는 자릿수가 손실됨) — 이 열은 합산하지 않습니다.",
  "data.subtitle.summary": " · 합계: “{name}” 시트",
  "about.guide.summary": "“{summary}” 시트는 피처 수와 전체 및 그룹별 합계를 보여 주고 빈 셀을 나열합니다.",
  "about.guide.totals": "“{data}” 시트의 맨 아래 행은 필터 후 표시된 행만 합산합니다."

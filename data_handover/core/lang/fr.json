@@ -269,6 +269,7 @@
  "summary.gaps.none": "Toutes les colonnes sont renseignées dans chaque ligne.",
  "summary.gaps.masked": "Colonnes masquées ({names}) omises.",
  "note.summary.group_missing": "La colonne de regroupement « {field} » n’est pas dans le fichier — la synthèse n’a pas de répartition par groupe.",
+ "note.summary.big_numbers": "La colonne « {header} » contient des nombres supérieurs à 10^15 enregistrés comme texte (Excel perdrait des chiffres) — elle n’est pas additionnée.",
  "data.subtitle.summary": " · totaux : feuille « {name} »",
  "about.guide.summary": "La feuille « {summary} » donne le nombre d’entités et les totaux pour l’ensemble et par groupe, et liste les cellules vides.",
  "about.guide.totals": "La dernière ligne de la feuille « {data} » ne totalise que les lignes visibles après filtrage."

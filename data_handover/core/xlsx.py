@@ -164,6 +164,20 @@ def _plain_years(pkg: Package, rows: Sequence[Sequence[Value]]) -> Package:
     return dataclasses.replace(pkg, columns=columns)
 
 
+def _unsum_big_ints(pkg: Package) -> tuple[Package, list[str]]:
+    """Kolumna sumowana z liczbą ≥ 10^15 (zapisaną jako tekst) nie jest sumowana, a uwaga to mówi."""
+    headers = _unique_headers(pkg.columns)
+    columns, notes = list(pkg.columns), []
+    for i, col in enumerate(columns):
+        if col.summed and not col.masked and any(
+            isinstance(row[i], int) and not isinstance(row[i], bool) and abs(row[i]) >= EXACT_INT_LIMIT  # type: ignore[arg-type]
+            for row in pkg.rows
+        ):
+            columns[i] = dataclasses.replace(col, summed=False)
+            notes.append(tr(pkg.language, "note.summary.big_numbers", header=headers[i]))
+    return dataclasses.replace(pkg, columns=columns), notes
+
+
 def number_format(col: Column, lang: str) -> str:
     clean_unit = col.unit.replace('"', "").strip()
     unit = f' "{clean_unit}"' if clean_unit else ""
@@ -343,7 +357,8 @@ def export(
     pkg, link_notes = _drop_excess_links(pkg)
     rows, notes = prepare_rows(pkg)
     pkg = _plain_years(pkg, rows)
-    notes = link_notes + notes
+    pkg, big_notes = _unsum_big_ints(pkg)
+    notes = link_notes + notes + big_notes
     summary_data = summarize(pkg, rows) if pkg.summary.sheet else None
     if summary_data is not None and summary_data.group_missing:
         notes.append(tr(lang, "note.summary.group_missing", field=pkg.summary.group_by))

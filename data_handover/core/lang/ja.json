@@ -269,6 +269,7 @@
  "summary.gaps.none": "すべての列がすべての行に値があります。",
  "summary.gaps.masked": "マスクした列({names})は除外しました。",
  "note.summary.group_missing": "グループ化の列「{field}」はファイルに含まれていないため、集計にはグループ別の内訳がありません。",
+ "note.summary.big_numbers": "列「{header}」には 10^15 を超える数値があり、テキストとして保存されています（Excel では桁が失われるため）。この列は合計しません。",
  "data.subtitle.summary": " · 合計:「{name}」シート",
  "about.guide.summary": "「{summary}」シートには、地物の数と全体・グループ別の合計、空のセルの一覧があります。",
  "about.guide.totals": "「{data}」シートの最下行は、フィルタ後に表示されている行だけを合計します。"

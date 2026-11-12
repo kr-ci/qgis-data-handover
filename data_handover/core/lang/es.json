@@ -269,6 +269,7 @@
  "summary.gaps.none": "Todas las columnas están rellenas en todas las filas.",
  "summary.gaps.masked": "Columnas enmascaradas ({names}) omitidas.",
  "note.summary.group_missing": "La columna de agrupación “{field}” no llegó al archivo: el resumen no tiene desglose por grupos.",
+ "note.summary.big_numbers": "La columna “{header}” tiene números superiores a 10^15 guardados como texto (Excel perdería dígitos): no se suma.",
  "data.subtitle.summary": " · totales: hoja “{name}”",
  "about.guide.summary": "La hoja “{summary}” indica el número de entidades y los totales generales y por grupo, y enumera las celdas vacías.",
  "about.guide.totals": "La última fila de la hoja “{data}” suma solo las filas visibles tras filtrar."

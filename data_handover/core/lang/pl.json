@@ -269,6 +269,7 @@
  "summary.gaps.none": "Wszystkie kolumny są wypełnione w każdym wierszu.",
  "summary.gaps.masked": "Kolumny maskowane ({names}) pominięte.",
  "note.summary.group_missing": "Kolumna grupowania „{field}” nie trafiła do pliku — podsumowanie jest bez podziału na grupy.",
+ "note.summary.big_numbers": "Kolumna „{header}” ma liczby większe niż 10^15 zapisane jako tekst (Excel zgubiłby cyfry) — nie jest sumowana.",
  "data.subtitle.summary": " · liczby razem: arkusz „{name}”",
  "about.guide.summary": "Arkusz „{summary}” podaje liczbę obiektów i sumy dla całości oraz dla grup, a także wymienia puste komórki.",
  "about.guide.totals": "Dolny wiersz arkusza „{data}” sumuje tylko wiersze widoczne po filtrowaniu."

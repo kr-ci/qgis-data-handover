@@ -269,6 +269,7 @@
  "summary.gaps.none": "所有列的每一行都已填写。",
  "summary.gaps.masked": "已省略被掩码的列（{names}）。",
  "note.summary.group_missing": "分组列“{field}”未写入文件，因此汇总没有按组划分。",
+ "note.summary.big_numbers": "列“{header}”含有大于 10^15 的数字，已按文本保存（Excel 会丢失数位）——该列不求和。",
  "data.subtitle.summary": " · 合计：“{name}”工作表",
  "about.guide.summary": "“{summary}”工作表给出要素数量、总体及各组的合计，并列出空单元格。",
  "about.guide.totals": "“{data}”工作表的最后一行只对筛选后可见的行求和。"

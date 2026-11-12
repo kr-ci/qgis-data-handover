@@ -269,6 +269,7 @@
  "summary.gaps.none": "Todas as colunas estão preenchidas em todas as linhas.",
  "summary.gaps.masked": "Colunas mascaradas ({names}) omitidas.",
  "note.summary.group_missing": "A coluna de agrupamento “{field}” não chegou ao ficheiro — o resumo não tem divisão por grupos.",
+ "note.summary.big_numbers": "A coluna “{header}” tem números superiores a 10^15 guardados como texto (o Excel perderia dígitos) — não é somada.",
  "data.subtitle.summary": " · totais: folha “{name}”",
  "about.guide.summary": "A folha “{summary}” indica o número de feições e os totais gerais e por grupo, e lista as células vazias.",
  "about.guide.totals": "A última linha da folha “{data}” soma apenas as linhas visíveis após filtrar."

@@ -95,7 +95,9 @@ the Processing algorithm reads them too.
 What is summed: decimal fields and the area or length from geometry by
 default; integer fields only if you tick them in "Sum columns". Identifiers,
 masked columns and columns with a value map are never summed. Masked columns
-are not offered for the breakdown either.
+are not offered for the breakdown either. Integer values from 10^15 up are
+written as text (Excel would lose digits), so a column containing them is not
+summed; a note in the About sheet says so.
 
 - Area and length from geometry are sums of the values rounded as shown in
   the column. They can differ from `aggregate(sum, $area)` by at most n × half

@@ -269,6 +269,7 @@
  "summary.gaps.none": "All columns are filled in every row.",
  "summary.gaps.masked": "Masked columns ({names}) left out.",
  "note.summary.group_missing": "The grouping column “{field}” did not make it into the file — the summary has no breakdown by group.",
+ "note.summary.big_numbers": "The column “{header}” has numbers above 10^15 stored as text (Excel would lose digits) — it is not summed.",
  "data.subtitle.summary": " · totals: “{name}” sheet",
  "about.guide.summary": "The “{summary}” sheet gives the number of features and the totals overall and by group, and lists empty cells.",
  "about.guide.totals": "The bottom row of the “{data}” sheet adds up only the rows visible after filtering."
