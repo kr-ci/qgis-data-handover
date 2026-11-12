@@ -1014,3 +1014,41 @@ def test_summary_sheet_too_long_is_an_error(monkeypatch: pytest.MonkeyPatch, tmp
     monkeypatch.setattr(xlsx, "SHEET_ROWS", sheet.max_row - 1)
     with pytest.raises(PackageError, match="mniejszej liczbie"):
         export(path, pkg, Look())
+
+
+def test_digest_negative_zero_is_accepted(tmp_path: Path) -> None:
+    pkg = _totals_pkg(rows=[["a", "1", -0.0, "x", None, None, True], ["b", "2", 2.0, "x", None, None, True]])
+    first = str(tmp_path / "v1.xlsx")
+    export(first, pkg, Look())
+    assert len(read_snapshot(_resave(first, str(tmp_path / "v1b.xlsx"))).rows) == 2
+
+
+def test_digest_ignores_row_order_but_not_values(tmp_path: Path) -> None:
+    first = str(tmp_path / "v1.xlsx")
+    export(first, _totals_pkg(), Look())
+
+    def swap(wb: object) -> None:  # sortowanie w Excelu: wiersz sum zostaje pod danymi
+        ws = wb["Dane"]  # type: ignore[index]
+        for c in range(1, 8):
+            a, b = ws.cell(row=HEADER_ROW + 1, column=c), ws.cell(row=HEADER_ROW + 2, column=c)
+            a.value, b.value = b.value, a.value
+    sorted_file = _resave(first, str(tmp_path / "sorted.xlsx"), swap)
+    assert [r[0] for r in read_snapshot(sorted_file).rows] == ["12/4", "12/3"]
+
+    def swap_and_change(wb: object) -> None:
+        swap(wb)
+        wb["Dane"].cell(row=HEADER_ROW + 1, column=3).value = 5.5  # type: ignore[index]
+    with pytest.raises(PackageError, match="zmieniono po eksporcie"):
+        export(str(tmp_path / "v2.xlsx"), _totals_pkg(), Look(),
+               previous=_resave(first, str(tmp_path / "e.xlsx"), swap_and_change))
+
+
+def test_carriage_return_is_normalized_in_cells(tmp_path: Path) -> None:
+    rows = [["a\r\nb", "1", 1.0, "x\ry", None, None, True]]
+    pkg = parcels(rows=rows)
+    first = str(tmp_path / "v1.xlsx")
+    export(first, pkg, Look())
+    ws = load_workbook(first)["Dane"]
+    assert ws.cell(row=HEADER_ROW + 1, column=1).value == "a\nb"
+    assert ws.cell(row=HEADER_ROW + 1, column=4).value == "x\ny"
+    assert len(read_snapshot(first).rows) == 1

@@ -134,6 +134,7 @@ def prepare_rows(pkg: Package) -> tuple[list[list[Value]], list[str]]:
             if isinstance(value, str):
                 clean = ILLEGAL_CHARACTERS_RE.sub("", value)
                 illegal += clean != value
+                clean = clean.replace("\r\n", "\n").replace("\r", "\n")  # w pliku nie ma samego CR
                 if len(clean) > CELL_LIMIT:
                     clean = clean[: CELL_LIMIT - 1] + "…"
                     truncated += 1
@@ -248,7 +249,8 @@ def read_snapshot(path: str) -> Snapshot:
         ]
         cells += [[None] * (width + 1)] * (used - len(cells))
         found = [[c.value if c is not None else None for c in row] for row in cells]
-        is_formula = [[getattr(c, "data_type", "") == "f" for c in row] for row in cells]
+        is_formula = [any(getattr(c, "data_type", "") == "f" for c in row) for row in cells]
+        total = [getattr(c, "data_type", "") == "f" for c in cells[count + 1]] if extra else []
         # Ręczne zmiany po eksporcie (przestawione lub dopisane kolumny, dopisane
         # lub usunięte wiersze, zmienione wartości) dałyby cicho błędny raport — odrzucamy taki plik.
         edited = found[0] != [headers[c] for c in columns] + [None]
@@ -258,8 +260,7 @@ def read_snapshot(path: str) -> Snapshot:
         if extra:
             # Wiersz sum stoi zaraz pod danymi i zawiera wyłącznie sumy częściowe; inaczej ktoś usunął wiersz
             # danych albo podmienił formułę. Kolumny z formułą przy eksporcie muszą ją nadal mieć.
-            total = is_formula[count + 1]
-            edited |= not any(total) or any(any(row) for row in is_formula[1 : count + 1])
+            edited |= not any(total) or any(is_formula[1 : count + 1])
             edited |= any(is_f and not str(v).startswith("=SUBTOTAL(109,") for is_f, v in zip(total, found[count + 1]))
             wanted = [int(n) for n in meta.get("totals_cols", "").split(",") if n]
             edited |= any(not total[n - 1] for n in wanted)
@@ -1103,7 +1104,7 @@ def _digest_cell(value: object) -> str:
     if isinstance(value, bool):
         return str(value)
     if isinstance(value, (int, float)):
-        return format(float(value), ".15g")
+        return format(float(value) + 0.0, ".15g")  # + 0.0: „-0” po zapisie wraca jako 0
     if isinstance(value, dt.datetime):
         return _to_second(value).isoformat()
     if isinstance(value, dt.date):
@@ -1114,8 +1115,8 @@ def _digest_cell(value: object) -> str:
 
 
 def _digest(rows: Sequence[Sequence[object]]) -> str:
-    """Skrót SHA-256 wartości komórek danych (kolejność wierszy i kolumn ma znaczenie)."""
-    text = "\x1e".join("\x1f".join(_digest_cell(v) for v in row) for row in rows)
+    """Skrót SHA-256 wartości komórek danych (kolejność kolumn ma znaczenie, wierszy nie: odbiorca sortuje)."""
+    text = "\x1e".join(sorted("\x1f".join(_digest_cell(v) for v in row) for row in rows))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
