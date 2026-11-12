@@ -36,6 +36,7 @@ META_SHEET = "_handover"
 CELL_LIMIT = 32_767
 # Excel trzyma liczby jako double: pewnych jest 15 cyfr znaczących.
 EXACT_INT_LIMIT = 10**15
+YEAR_RANGE = (1000, 2100)  # liczby z tego zakresu w polu całkowitym uznajemy za rok
 WIDTH_SAMPLE = 300
 # Excel przyjmuje najwyżej 65 530 hiperłączy w arkuszu; plik z większą liczbą uznaje za uszkodzony.
 HYPERLINK_LIMIT = 65_530
@@ -131,11 +132,26 @@ def prepare_rows(pkg: Package) -> tuple[list[list[Value]], list[str]]:
     return out, notes
 
 
+def _plain_years(pkg: Package, rows: Sequence[Sequence[Value]]) -> Package:
+    """Kopia paczki, w której kolumny z samymi latami nie mają separatora tysięcy."""
+    low, high = YEAR_RANGE
+    columns = list(pkg.columns)
+    for i, col in enumerate(columns):
+        if col.kind != "integer" or col.is_identifier or col.unit:
+            continue
+        values = [row[i] for row in rows if row[i] is not None]
+        if values and all(
+            isinstance(v, int) and not isinstance(v, bool) and low <= v <= high for v in values
+        ):
+            columns[i] = dataclasses.replace(col, grouping=False)
+    return dataclasses.replace(pkg, columns=columns)
+
+
 def number_format(col: Column, lang: str) -> str:
     clean_unit = col.unit.replace('"', "").strip()
     unit = f' "{clean_unit}"' if clean_unit else ""
     if col.kind == "integer":
-        return ("0" if col.is_identifier else "#,##0") + unit
+        return ("0" if col.is_identifier or not col.grouping else "#,##0") + unit
     if col.kind == "decimal":
         decimals = max(0, min(col.decimals, 10))
         return ("#,##0." + "0" * decimals if decimals else "#,##0") + unit
@@ -166,7 +182,7 @@ def display(value: Value, col: Optional[Column], lang: str) -> str:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if col is not None and col.kind == "decimal":
             text = f"{value:,.{max(0, min(col.decimals, 10))}f}"
-        elif col is not None and col.is_identifier:
+        elif col is not None and (col.is_identifier or not col.grouping):
             text = str(value)
         else:
             text = f"{value:,}"
@@ -292,6 +308,7 @@ def export(
         raise PackageError(tr(lang, "error.too_many_rows", n=len(pkg.rows), limit=MAX_ROWS))
     pkg, link_notes = _drop_excess_links(pkg)
     rows, notes = prepare_rows(pkg)
+    pkg = _plain_years(pkg, rows)
     notes = link_notes + notes
     changes: Optional[list[diff.Change]] = None
     snapshot: Optional[Snapshot] = None

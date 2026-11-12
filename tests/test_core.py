@@ -23,6 +23,7 @@ from data_handover.core.model import (  # noqa: E402
     Look,
     Package,
     Sheets,
+    Summary,
     from_dict,
     look_with_theme,
     map_url,
@@ -611,3 +612,29 @@ def test_too_many_links_are_dropped(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert fields == ["nr_dz", tr("pl", "dict.geometry_source")]
     assert [r[1] for r in wb[META_SHEET].iter_rows(values_only=True) if r[0] == "column"] == ["nr_dz", "@area_ha"]
     assert tr("pl", "note.link.dropped", limit="2") in result.notes
+
+
+def test_year_column_without_thousands_separator(tmp_path: Path) -> None:
+    def fmt(column: Column, values: list[object]) -> str:
+        pkg = parcels(rows=[[v] for v in values])
+        pkg.columns = [column]
+        path = str(tmp_path / "rok.xlsx")
+        export(path, pkg, LOOK)
+        return str(load_workbook(path).worksheets[0].cell(HEADER_ROW + 1, 1).number_format)
+
+    assert fmt(Column("rok", "Rok nabycia", "integer"), [2019, None, 2021]) == "0"
+    assert fmt(Column("rok", "Rok nabycia", "integer"), [2019, 15000]) == "#,##0"
+    assert fmt(Column("rok", "Rok nabycia", "integer", unit="szt."), [2019, 2021]) == '#,##0 "szt."'
+    assert fmt(Column("id", "Id", "integer", is_identifier=True), [2019, 2021]) == "0"
+
+
+def test_summary_defaults_and_from_dict() -> None:
+    assert from_dict(Summary, None) == Summary()
+    got = from_dict(Summary, {"row": True, "group_by": 5})
+    assert got.row is True and got.group_by == "" and got.sheet is False and got.measure is True
+    assert Package("t", [], []).summary == Summary()
+
+
+def test_display_without_grouping() -> None:
+    assert xlsx.display(2019, Column("rok", "Rok", "integer", grouping=False), "pl") == "2019"
+    assert xlsx.display(2019, Column("rok", "Rok", "integer"), "pl") != "2019"

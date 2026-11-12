@@ -30,6 +30,18 @@ class Column:
     represented: bool = False
     masked: bool = False
     codes: list[tuple[str, str]] = field(default_factory=list)
+    summed: bool = False  # kolumna wchodzi do wiersza sum i „Podsumowania”
+    grouping: bool = True  # separator tysięcy (wyłączany np. dla roku)
+
+
+@dataclass
+class Summary:
+    """Ustawienia wiersza sum i arkusza „Podsumowanie” (domyślnie wszystko wyłączone)."""
+
+    row: bool = False
+    sheet: bool = False
+    group_by: str = ""
+    measure: bool = True
 
 
 @dataclass
@@ -47,6 +59,7 @@ class Package:
     notes: list[str] = field(default_factory=list)
     language: str = "pl"
     key: Optional[str] = None
+    summary: Summary = field(default_factory=Summary)
     exported_at: dt.datetime = field(default_factory=lambda: dt.datetime.now().replace(microsecond=0))
 
 
