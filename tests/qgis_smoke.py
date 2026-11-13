@@ -1064,6 +1064,8 @@ def main() -> None:
     check(dialog.look() == Look() and dialog.sheets() == Sheets(), "okno startuje z domyślnym wyglądem i arkuszami")
     check(dialog.lang_combo.currentData() == "en" and dialog.lang_combo.count() == 10,
           "język pliku: 10 do wyboru, domyślnie angielski")
+    check(not dialog.windowIcon().isNull() and not dialog.banner_icon.pixmap().isNull(),
+          "ikona wtyczki w pasku tytułu i w nagłówku okna")
     window_style = dialog.styleSheet()
     dialog._apply_preset(THEMES["forest"])
     check(dialog.look().header.fill == "2D5A3D" and dialog.look().body == Look().body,

@@ -3,6 +3,15 @@
 All notable changes to the Data Handover plugin. Versions follow
 `version` in [`data_handover/metadata.txt`](data_handover/metadata.txt).
 
+## 1.0.1
+
+- New plugin icon (a table handed over on an open palm), also in the window
+  header and title bar.
+- The **openpyxl** library (3.1.5, MIT licence) and its dependency
+  et_xmlfile (2.0.0, MIT) are bundled in `data_handover/ext`. They are used
+  only when QGIS does not provide its own openpyxl, so the plugin works right
+  after installation from ZIP, with no extra packages.
+
 ## 1.0.0 — first public release
 
 - **Data** sheet formatted to your settings: Excel table or plain range,

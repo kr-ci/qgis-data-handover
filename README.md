@@ -1,3 +1,5 @@
+<img src="data_handover/icon.svg" alt="Data Handover icon" width="96" align="right">
+
 # Data Handover — QGIS plugin
 
 **English** · [Polski](README.pl.md)
@@ -173,13 +175,14 @@ afterwards — that is where the layer settings live.
 ## Requirements and installation
 
 - QGIS 3.40–3.44 or 4.x (tested: 3.40, 3.44.15, 4.2.3).
-- The **openpyxl** Python library — included in the QGIS standalone
-  installer for Windows; in OSGeo4W add the `python3-openpyxl` package, on
-  Linux install `python3-openpyxl`. Without it the plugin shows
-  installation instructions.
+- Nothing else to install: the plugin writes XLSX with the **openpyxl**
+  library from QGIS when present (the Windows standalone installer has it),
+  otherwise with the copy bundled in the plugin (openpyxl 3.1.5 and
+  et_xmlfile 2.0.0, MIT licence, in `data_handover/ext`).
 
-Install from a file: `scripts/package.sh` builds
-`build/data_handover-<version>.zip`; in QGIS: *Plugins → Manage and Install
+Install from a file: download `data_handover-<version>.zip` from
+[Releases](https://github.com/kr-ci/qgis-data-handover/releases) (or build
+it with `scripts/package.sh`); in QGIS: *Plugins → Manage and Install
 Plugins → Install from ZIP*. The plugin appears on the toolbar, in the
 *Plugins* menu and in the context menu of a vector layer.
 

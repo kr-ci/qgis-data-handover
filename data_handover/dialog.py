@@ -78,6 +78,7 @@ PREVIOUS = "data_handover/previous"
 DEFAULT_LANGUAGE = "en"  # język pliku, dopóki użytkownik nie wybierze innego
 # Stały wygląd okna — niezależny od stylu pliku, który użytkownik ustawia.
 ACCENT, ACCENT_TEXT = "1F3A5F", "FFFFFF"
+ICON = os.path.join(os.path.dirname(__file__), "icon.svg")
 COL_FIELD, COL_KIND, COL_HEADER, COL_UNIT, COL_DESC, COL_PRIVACY = range(6)
 MEASURE = "@measure"  # dane pozycji „pomiar z geometrii” na liście sum (nazwy pól nie zaczynają się od „@”)
 NAME_ROLE = Qt.ItemDataRole.UserRole
@@ -234,6 +235,7 @@ class HandoverDialog(QDialog):
         self._refreshing = False
 
         self.setWindowTitle(self.t("ui.title"))
+        self.setWindowIcon(QIcon(ICON))
         self.setMinimumSize(980, 700)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 12)
@@ -290,14 +292,25 @@ class HandoverDialog(QDialog):
     def _banner(self) -> QFrame:
         self.banner = QFrame()
         self.banner.setObjectName("banner")
-        layout = QVBoxLayout(self.banner)
-        layout.setContentsMargins(18, 14, 18, 14)
+        layout = QHBoxLayout(self.banner)
+        layout.setContentsMargins(16, 11, 18, 11)
+        layout.setSpacing(14)
+        # Ikona na białym kafelku — granatowe kontury ikony zniknęłyby na granatowym tle.
+        self.banner_icon = QLabel()
+        self.banner_icon.setObjectName("bannerIcon")
+        self.banner_icon.setPixmap(QIcon(ICON).pixmap(46, 46))
+        self.banner_icon.setFixedSize(54, 54)
+        self.banner_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        text = QVBoxLayout()
+        text.setSpacing(2)
         title = QLabel("Data Handover")
         title.setObjectName("bannerTitle")
         tagline = QLabel(self.t("ui.tagline"))
         tagline.setObjectName("bannerTagline")
-        layout.addWidget(title)
-        layout.addWidget(tagline)
+        text.addWidget(title)
+        text.addWidget(tagline)
+        layout.addWidget(self.banner_icon)
+        layout.addLayout(text, 1)
         return self.banner
 
     def _data_tab(self) -> QWidget:
@@ -821,6 +834,7 @@ class HandoverDialog(QDialog):
             f"#banner {{ background: #{ACCENT}; }}"
             f"#bannerTitle {{ color: #{ACCENT_TEXT}; font-size: 17pt; font-weight: 600; }}"
             f"#bannerTagline {{ color: #{ACCENT_TEXT}; }}"
+            "#bannerIcon { background: white; border-radius: 9px; }"
             "#hint { color: palette(mid); }"
             "#preview { background: white; border: 1px solid #D0D0D0; padding: 10px; }"
             f"#exportButton {{ background: #{ACCENT}; color: #{ACCENT_TEXT};"

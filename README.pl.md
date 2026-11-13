@@ -1,3 +1,5 @@
+<img src="data_handover/icon.svg" alt="Ikona Data Handover" width="96" align="right">
+
 # Data Handover — wtyczka QGIS
 
 [English](README.md) · **Polski**
@@ -173,12 +175,14 @@ ustawienia warstwy.
 ## Wymagania i instalacja
 
 - QGIS 3.40–3.44 albo 4.x (sprawdzone: 3.40, 3.44.15, 4.2.3).
-- Biblioteka Pythona **openpyxl** — jest w instalatorze QGIS dla Windows;
-  w OSGeo4W dodaj pakiet `python3-openpyxl`, na Linuksie zainstaluj
-  `python3-openpyxl`. Bez niej wtyczka pokaże instrukcję instalacji.
+- Nic więcej nie trzeba instalować: wtyczka zapisuje XLSX biblioteką
+  **openpyxl** z QGIS, jeśli jest (ma ją instalator QGIS dla Windows),
+  a w przeciwnym razie kopią dołączoną do wtyczki (openpyxl 3.1.5
+  i et_xmlfile 2.0.0, licencja MIT, w `data_handover/ext`).
 
-Instalacja z pliku: `scripts/package.sh` tworzy
-`build/data_handover-<wersja>.zip`; w QGIS: *Wtyczki → Zarządzaj wtyczkami →
+Instalacja z pliku: pobierz `data_handover-<wersja>.zip` z
+[Releases](https://github.com/kr-ci/qgis-data-handover/releases) (albo zbuduj
+go poleceniem `scripts/package.sh`); w QGIS: *Wtyczki → Zarządzaj wtyczkami →
 Zainstaluj z pliku ZIP*. Wtyczka pojawia się na pasku narzędzi, w menu
 *Wtyczki* i w menu kontekstowym warstwy wektorowej.
 

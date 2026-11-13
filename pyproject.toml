@@ -3,7 +3,7 @@
 [tool.ruff]
 line-length = 120
 target-version = "py39"
-extend-exclude = ["EKSPORT_ATR_DO_EXCEL.py", "build"]
+extend-exclude = ["EKSPORT_ATR_DO_EXCEL.py", "build", "data_handover/ext"]  # ext: biblioteki obce, bez zmian
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N"]

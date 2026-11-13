@@ -3,10 +3,13 @@
 Rozpakowuje build/data_handover-<wersja>.zip do pustego katalogu wtyczek,
 sprawdza metadane i zgodność wersji tak jak instalator QGIS, a potem wczytuje
 i uruchamia wtyczkę przez qgis.utils — z paczki, nie z katalogu źródeł.
+scripts/qgis-test.sh uruchamia go dwa razy: bez openpyxl w systemie (eksport musi
+użyć kopii z paczki, data_handover/ext) i z openpyxl (pierwszeństwo ma systemowa).
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import stat
 import sys
@@ -54,6 +57,7 @@ def main() -> None:
         plugins = tempfile.mkdtemp()
         archive.extractall(plugins)
 
+    system_openpyxl = importlib.util.find_spec("openpyxl") is not None  # przed dodaniem paczki do ścieżki
     sys.path.insert(0, plugins)
     qgis.utils.plugin_paths = [plugins]
     qgis.utils.iface = get_iface()
@@ -107,6 +111,11 @@ def main() -> None:
     expected = [tr("pl", f"sheet.{s}") for s in ("data", "summary", "dictionary", "about", "changes")]
     names = load_workbook(second).sheetnames
     check(names[:5] == expected, f"eksport kodem z paczki: wszystkie arkusze ({names})")
+    import openpyxl
+
+    from_package = os.path.realpath(openpyxl.__file__).startswith(os.path.realpath(plugins))
+    origin = "z systemu (ma pierwszeństwo)" if system_openpyxl else "dołączona do paczki"
+    check(from_package != system_openpyxl, f"openpyxl {origin}: {openpyxl.__file__}")
     check(qgis.utils.unloadPlugin("data_handover"), "wyłączenie wtyczki bez błędów")
     print("OK")
 
