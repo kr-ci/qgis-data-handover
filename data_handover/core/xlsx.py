@@ -430,6 +430,12 @@ def _save(wb: Workbook, path: str, canceled: CancelCheck = None) -> None:
     # (mkstemp odpada: nadaje prawa 0600, a plik bywa dzielony z innymi).
     tmp = os.path.join(folder, f".~{base}.{uuid.uuid4().hex[:12]}.tmp")
     try:
+        if os.name == "posix" and os.path.exists(path):
+            # Nadpisanie: plik tymczasowy od początku ma prawa poprzedniego pliku — plik 0600
+            # nie może się odsłonić ani w trakcie zapisu, ani po podmianie (umask nie decyduje).
+            mode = os.stat(path).st_mode & 0o777
+            os.close(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode))
+            os.chmod(tmp, mode)
         wb.save(tmp)
         _check(canceled)  # zapis openpyxl trwa długo i nie da się go przerwać w środku
         os.replace(tmp, path)

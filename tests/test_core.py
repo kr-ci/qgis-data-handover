@@ -568,6 +568,30 @@ def test_canceled_export_keeps_previous_file(tmp_path: Path, monkeypatch: pytest
     assert [p.name for p in tmp_path.iterdir()] == ["plik.xlsx"]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="prawa plików POSIX")
+def test_overwrite_keeps_restricted_permissions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nadpisanie pliku 0600 nie może go odsłonić — ani wynik, ani plik tymczasowy w trakcie zapisu."""
+    import os
+
+    target = tmp_path / "poufny.xlsx"
+    target.write_bytes(b"poprzednia wersja")
+    target.chmod(0o600)
+    during: list[int] = []
+    real_save = xlsx.Workbook.save
+
+    def save_and_look(wb: object, path: str) -> None:
+        real_save(wb, path)
+        during.append(os.stat(path).st_mode & 0o777)
+
+    monkeypatch.setattr(xlsx.Workbook, "save", save_and_look)
+    old = os.umask(0o022)
+    try:
+        export(str(target), parcels(), LOOK)
+    finally:
+        os.umask(old)
+    assert during == [0o600] and target.stat().st_mode & 0o777 == 0o600
+
+
 # --- R7: kolumny z geometrii -------------------------------------------------
 
 OSM = "https://www.openstreetmap.org/?mlat=52.245539&mlon=21.014835#map=18/52.245539/21.014835"

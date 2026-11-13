@@ -11,6 +11,9 @@ All notable changes to the Data Handover plugin. Versions follow
   et_xmlfile (2.0.0, MIT) are bundled in `data_handover/ext`. They are used
   only when QGIS does not provide its own openpyxl, so the plugin works right
   after installation from ZIP, with no extra packages.
+- Fix (Linux, macOS): exporting over an existing file keeps its permissions.
+  Before, a file readable only by its owner became readable by others after
+  the next export to the same path.
 
 ## 1.0.0 — first public release
 

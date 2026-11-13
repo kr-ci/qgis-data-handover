@@ -3,8 +3,9 @@
 Rozpakowuje build/data_handover-<wersja>.zip do pustego katalogu wtyczek,
 sprawdza metadane i zgodność wersji tak jak instalator QGIS, a potem wczytuje
 i uruchamia wtyczkę przez qgis.utils — z paczki, nie z katalogu źródeł.
-scripts/qgis-test.sh uruchamia go dwa razy: bez openpyxl w systemie (eksport musi
-użyć kopii z paczki, data_handover/ext) i z openpyxl (pierwszeństwo ma systemowa).
+scripts/qgis-test.sh uruchamia go dwa razy i mówi wprost, czego oczekuje (zmienna
+OPENPYXL): `bundled` — w systemie nie ma openpyxl, eksport musi użyć kopii z paczki
+(data_handover/ext); `system` — openpyxl jest w systemie i ma pierwszeństwo.
 """
 
 from __future__ import annotations
@@ -57,7 +58,11 @@ def main() -> None:
         plugins = tempfile.mkdtemp()
         archive.extractall(plugins)
 
+    source = os.environ.get("OPENPYXL", "")  # skąd ma pochodzić openpyxl w tym przebiegu
+    check(source in ("bundled", "system"), f"OPENPYXL=bundled|system ustawione przez skrypt ({source!r})")
     system_openpyxl = importlib.util.find_spec("openpyxl") is not None  # przed dodaniem paczki do ścieżki
+    check(system_openpyxl == (source == "system"),
+          f"środowisko testu: openpyxl w systemie {'jest' if system_openpyxl else 'brak'} (oczekiwano {source})")
     sys.path.insert(0, plugins)
     qgis.utils.plugin_paths = [plugins]
     qgis.utils.iface = get_iface()
@@ -114,8 +119,8 @@ def main() -> None:
     import openpyxl
 
     from_package = os.path.realpath(openpyxl.__file__).startswith(os.path.realpath(plugins))
-    origin = "z systemu (ma pierwszeństwo)" if system_openpyxl else "dołączona do paczki"
-    check(from_package != system_openpyxl, f"openpyxl {origin}: {openpyxl.__file__}")
+    origin = "dołączona do paczki" if source == "bundled" else "z systemu (ma pierwszeństwo)"
+    check(from_package == (source == "bundled"), f"openpyxl {origin}: {openpyxl.__file__}")
     check(qgis.utils.unloadPlugin("data_handover"), "wyłączenie wtyczki bez błędów")
     print("OK")
 
