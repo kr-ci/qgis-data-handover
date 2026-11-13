@@ -1106,6 +1106,19 @@ def main() -> None:
     hidden = layer_reader.build_package(layer, choices, personal=personal, language="pl")
     check(dict(hidden.facts)["filter"] == tr("pl", "filter.hidden"), "filtr z danymi osobowymi ukryty w metryce")
     layer.setSubsetString("")
+    # Przegląd R9, zarzut 1: GeoPackage (jak PostGIS) ma filtr także w źródle warstwy (publicSource).
+    gp = gpkg_layer("dzialki_r9_filtr")
+    gp.setSubsetString("\"nazwisko\" = 'Jan Kowalski'")
+    check("Kowalski" in gp.publicSource(), "sonda: źródło GeoPackage zawiera filtr")
+    gp_pkg = layer_reader.build_package(gp, choices, personal=personal, language="pl")
+    gp_facts = dict(gp_pkg.facts)
+    gp_path = str(OUT / "r9_filtr_w_zrodle.xlsx")
+    export(gp_path, gp_pkg, Look(), Sheets(about=True))
+    gp_text = " ".join(str(c.value) for ws in load_workbook(gp_path) for row in ws.iter_rows() for c in row
+                       if c.value is not None)
+    check("dzialki_r9_filtr.gpkg" in gp_facts["source"] and "Kowalski" not in gp_facts["source"]
+          and "Kowalski" not in gp_text, f"filtr z danymi osobowymi ukryty także w źródle ({gp_facts['source']!r})")
+    QgsProject.instance().removeMapLayer(gp.id())
 
     # Zarzuty 9 i 12: podstawa porównania zmienia się tylko po udanym zapisie, a uwagi widać w komunikacie.
     import data_handover.dialog as dialog_module

@@ -25,7 +25,7 @@ i dymki z opisem kolumn.*
 
 | Arkusz | Co zawiera |
 |---|---|
-| **Dane** | dane sformatowane według ustawień; nagłówki z aliasów; etykiety zamiast kodów (value map, relacje); liczby z jednostką, które dalej są liczbami; identyfikatory (TERYT, nr działki) jako tekst; gotowe do wydruku |
+| **Dane** | dane sformatowane według ustawień; nagłówki z aliasów; etykiety zamiast kodów (value map, relacje); liczby z jednostką, które dalej są liczbami; identyfikatory (TERYT, nr działki) bez separatorów tysięcy i bez sumowania — tekstowe zostają tekstem z zerami wiodącymi; gotowe do wydruku |
 | **Słownik** (opcja) | wybrane pozycje dla każdej kolumny: pole źródłowe, typ, jednostka, opis, kody i etykiety |
 | **Metryka** (opcja) | wybrane pozycje: stan danych na dzień, warstwa, źródło, układ współrzędnych, zakres, filtr, liczba obiektów, autor, instrukcja czytania, uwagi do wydania |
 | **Zmiany** (opcja) | obiekty dodane, usunięte i zmienione względem poprzedniego pliku, z wartościami „było / jest”; zmienione komórki podświetlone w danych |
@@ -137,7 +137,9 @@ zawiera, nie sumujemy; mówi o tym uwaga w „Metryce”.
 Ten sam eksport jest dostępny jako algorytm Processing **Data Handover →
 Przekaż dane (XLSX)** (`dataHandover:package`): w Przyborniku Processing,
 w trybie wsadowym, w modelu graficznym i z wiersza poleceń. Daje ten sam
-plik co okno. Kolumny, nagłówki, jednostki, opisy, kolejność kolumn,
+plik co okno, z tym że tytułem jest zawsze nazwa warstwy, a uwagi autora
+algorytm nie dodaje (oba ustawia się tylko w oknie i nie są zapisywane).
+Kolumny, nagłówki, jednostki, opisy, kolejność kolumn,
 decyzje o danych osobowych i kolumnę klucza bierze z ustawień warstwy,
 które okno zapisało w projekcie (także kolumny z geometrii; elipsoidę —
 z projektu albo z opcji `--ELLIPSOID`); wygląd, arkusze dodatkowe, autora i język

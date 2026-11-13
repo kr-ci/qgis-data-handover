@@ -11,7 +11,9 @@ All notable changes to the Data Handover plugin. Versions follow
   and a live preview.
 - Readable content: headers from aliases, value map and relation labels
   instead of codes, numbers with their unit kept as numbers, identifiers
-  (TERYT, parcel numbers) kept as text, years without a thousands separator.
+  (TERYT, parcel numbers) without thousands separators and never summed
+  (text identifiers keep their leading zeros), years without a thousands
+  separator.
 - Optional sheets, off by default: **Dictionary** (column descriptions),
   **About** (source, date, CRS, scope, filter, author, notes), **Summary**
   (counts, sums, breakdown by one column, missing data) and **Changes**
@@ -25,7 +27,7 @@ All notable changes to the Data Handover plugin. Versions follow
 - Totals row below the table (`SUBTOTAL`, follows Excel filters).
 - Export runs in the background with progress and a Cancel button.
 - Processing algorithm `dataHandover:package` for batch mode, graphical
-  models and `qgis_process`.
+  models and `qgis_process` (title = layer name, no author's note).
 - Window and file contents in 10 languages: English, German, French,
   Spanish, Portuguese, Polish, Russian, Korean, Japanese, Simplified Chinese.
 - QGIS 3.40–3.44 (Qt5) and 4.x (Qt6) from one code base.

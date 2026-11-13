@@ -25,7 +25,7 @@ notes.*
 
 | Sheet | What it holds |
 |---|---|
-| **Data** | the data formatted according to your settings; headers from aliases; labels instead of codes (value map, relations); numbers with a unit that are still numbers; identifiers (e.g. TERYT, parcel numbers) kept as text; ready to print |
+| **Data** | the data formatted according to your settings; headers from aliases; labels instead of codes (value map, relations); numbers with a unit that are still numbers; identifiers (e.g. TERYT, parcel numbers) without thousands separators and never summed — text identifiers stay text with their leading zeros; ready to print |
 | **Dictionary** (optional) | chosen items for each column: source field, type, unit, description, codes and labels |
 | **About** (optional) | chosen items: data as of date, layer, source, coordinate reference system, scope, filter, feature count, author, reading guide, release notes |
 | **Changes** (optional) | features added, removed and changed since the previous file, with "was / is" values; changed cells highlighted in the data |
@@ -136,7 +136,9 @@ summed; a note in the About sheet says so.
 The same export is available as a Processing algorithm, **Data Handover →
 Hand over data (XLSX)** (`dataHandover:package`): in the Processing
 Toolbox, in batch mode, in graphical models and from the command line.
-It produces the same file as the window. Columns, headers, units,
+It produces the same file as the window, except that the title is always
+the layer name and the author's note is not added (both are set only in
+the window and are not saved). Columns, headers, units,
 descriptions, column order, personal data choices and the key column come
 from the layer settings the window saved in the project (also the
 columns from geometry; the ellipsoid comes from the project or the

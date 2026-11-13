@@ -626,15 +626,20 @@ def plan_package(
     # którego nie eksportujemy jawnie (np. "email" = 'anna@example.com').
     plain = {c.name for c in columns if not c.masked}
     subset = layer.subsetString()
+    source = layer.publicSource()
     if privacy.mentions(subset, [name for name in personal if name not in plain]):
-        subset = tr(language, "filter.hidden")
+        # GeoPackage, PostGIS i inne dopisują filtr do źródła (`|subset=…`, `sql=…`) — tam też go ukrywamy;
+        # gdy nie da się go znaleźć dosłownie, ukrywamy całe źródło.
+        hidden = tr(language, "filter.hidden")
+        source = source.replace(subset, hidden) if subset in source else hidden
+        subset = hidden
 
     crs = layer.crs()
     facts = [
         ("title", title or layer.name()),
         ("layer", layer.name()),
         ("note", note),
-        ("source", layer.publicSource()),
+        ("source", source),
         ("provider", layer.providerType()),
         ("crs", f"{crs.authid()} — {crs.description()}" if crs.isValid() else ""),
         ("scope", tr(language, f"scope.{scope}")),

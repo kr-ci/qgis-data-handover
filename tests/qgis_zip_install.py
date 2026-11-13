@@ -81,6 +81,32 @@ def main() -> None:
           and all(len(TEXT[lang]) == len(TEXT["en"]) for lang in LANGUAGES),
           "okno z paczki otwiera się, wszystkie 10 języków w ZIP")
     window.close()
+
+    # Eksport kodem z paczki: wszystkie arkusze, z tytułem, sumami i porównaniem z poprzednim plikiem.
+    from openpyxl import load_workbook
+    from qgis.core import QgsFeature, QgsGeometry, QgsPointXY, QgsVectorLayer
+
+    from data_handover import layer_reader
+    from data_handover.core.i18n import tr
+    from data_handover.core.model import Look, Sheets, Summary
+    from data_handover.core.xlsx import export
+
+    layer = QgsVectorLayer("Point?crs=EPSG:2180&field=nr:string&field=pow:double(10,2)", "zip", "memory")
+    for nr, area in (("1/1", 10.5), ("1/2", 20.25)):
+        feature = QgsFeature(layer.fields())
+        feature.setAttributes([nr, area])
+        feature.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(500000, 500000)))
+        layer.dataProvider().addFeature(feature)
+    choices = [layer_reader.FieldChoice(n) for n in layer.fields().names()]
+    out = tempfile.mkdtemp()
+    first, second = os.path.join(out, "v1.xlsx"), os.path.join(out, "v2.xlsx")
+    for path, previous in ((first, None), (second, first)):
+        pkg = layer_reader.build_package(layer, choices, key="nr", title="ZIP", language="pl",
+                                         summary=Summary(row=True, sheet=True))
+        export(path, pkg, Look(), Sheets(dictionary=True, about=True), previous=previous)
+    expected = [tr("pl", f"sheet.{s}") for s in ("data", "summary", "dictionary", "about", "changes")]
+    names = load_workbook(second).sheetnames
+    check(names[:5] == expected, f"eksport kodem z paczki: wszystkie arkusze ({names})")
     check(qgis.utils.unloadPlugin("data_handover"), "wyłączenie wtyczki bez błędów")
     print("OK")
 
