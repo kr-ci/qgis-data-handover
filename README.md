@@ -196,4 +196,8 @@ scripts/readme-media.sh             # screenshots and animation in screenshots/
 
 Changes between versions: [`CHANGELOG.md`](CHANGELOG.md).
 
-License: GPL-2.0-or-later ([`LICENSE`](LICENSE)).
+## Author
+
+Krzysztof Cichocki — [github.com/kr-ci](https://github.com/kr-ci)
+
+© 2026 Krzysztof Cichocki. License: GPL-2.0-or-later ([`LICENSE`](LICENSE)).
