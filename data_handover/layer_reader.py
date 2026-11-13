@@ -417,7 +417,7 @@ def _crs_key(crs: QgsCoordinateReferenceSystem) -> str:
     authid = crs.authid()
     if authid and not authid.upper().startswith("USER:"):
         return authid
-    return "wkt-" + hashlib.sha1(crs.toWkt().encode("utf-8")).hexdigest()[:10]
+    return "wkt-" + hashlib.sha1(crs.toWkt().encode("utf-8"), usedforsecurity=False).hexdigest()[:10]
 
 
 def _geo_plan(layer: QgsVectorLayer, geo: GeoColumns, project_ellipsoid: str, language: str, notes: list[str],

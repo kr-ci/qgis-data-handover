@@ -6,6 +6,12 @@ A QGIS plugin that exports the attribute table of a vector layer to a
 formatted Excel workbook — styled the way you choose, with readable
 headers and labels instead of codes.
 
+![Plugin window, then the exported workbook: Data, Summary and Changes sheets](screenshots/export.gif)
+
+*The window in QGIS 4.2.3 on Linux, then the exported file. Sheet images are
+rendered by LibreOffice; Excel also shows the table styles and the header
+notes.*
+
 ## What you set
 
 | Tab | What it holds |
@@ -45,6 +51,25 @@ Simplified Chinese. Pick the window language from the "Plugin language"
 list in the footer (English by default); the file language is a separate
 choice on the Sheets tab. Column headers and values come from the layer,
 so they stay in the language of the data.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Data tab](screenshots/window-data.png) | ![Look tab with live preview](screenshots/window-look.png) |
+| **Data** tab: columns, personal data, geometry, totals | **Look** tab with a live preview |
+
+**Data** sheet — masked e-mail, area from geometry, map links, changed cells
+highlighted, totals row:
+
+![Data sheet](screenshots/sheet-data.png)
+
+| | |
+|---|---|
+| ![Summary sheet](screenshots/sheet-summary.png) | ![Changes sheet](screenshots/sheet-changes.png) |
+| **Summary**: totals, breakdown by land use, missing data | **Changes** since the previous export |
+| ![Dictionary sheet](screenshots/sheet-dictionary.png) | ![About sheet](screenshots/sheet-about.png) |
+| **Dictionary**: what each column means | **About**: source, CRS, scope, reading guide |
 
 ## Columns from geometry
 
@@ -164,6 +189,9 @@ uv run --no-project --python 3.12 --with mypy --with openpyxl --with types-openp
 uv run --no-project --python 3.12 --with pytest --with openpyxl pytest -q
 scripts/qgis-test.sh 4.2.3          # test in real QGIS (Docker); CI also runs 3.40 and 3.44.15
 scripts/render-xlsx.sh build/przyklad_qgis4.2.3.xlsx   # sheet screenshots (LibreOffice)
+scripts/readme-media.sh             # screenshots and animation in screenshots/
 ```
+
+Changes between versions: [`CHANGELOG.md`](CHANGELOG.md).
 
 License: GPL-2.0-or-later ([`LICENSE`](LICENSE)).

@@ -6,6 +6,12 @@ Wtyczka QGIS, która eksportuje tabelę atrybutów warstwy wektorowej do
 sformatowanego pliku Excela — z wyglądem ustawionym przez Ciebie, czytelnymi
 nagłówkami i etykietami zamiast kodów.
 
+![Okno wtyczki, potem wyeksportowany plik: arkusze Data, Summary i Changes](screenshots/export.gif)
+
+*Okno w QGIS 4.2.3 na Linuksie (po angielsku), potem wyeksportowany plik.
+Arkusze wyrenderował LibreOffice; Excel pokazuje dodatkowo style tabeli
+i dymki z opisem kolumn.*
+
 ## Co ustawiasz
 
 | Zakładka | Co zawiera |
@@ -44,6 +50,27 @@ rosyjsku, koreańsku, japońsku i chińsku. Język okna wybierasz na liście
 „Język wtyczki” w stopce (domyślnie angielski), język treści pliku —
 osobno w zakładce Arkusze. Nagłówki i wartości kolumn pochodzą z warstwy,
 więc zostają w języku danych.
+
+## Zrzuty ekranu
+
+Zrzuty pokazują okno i plik po angielsku; po polsku wyglądają tak samo.
+
+| | |
+|---|---|
+| ![Zakładka Dane](screenshots/window-data.png) | ![Zakładka Wygląd z podglądem](screenshots/window-look.png) |
+| Zakładka **Dane**: kolumny, dane osobowe, geometria, sumy | Zakładka **Wygląd** z podglądem na żywo |
+
+Arkusz **Dane** — zamaskowany e-mail, powierzchnia z geometrii, linki do
+mapy, podświetlone zmienione komórki, wiersz sum:
+
+![Arkusz Dane](screenshots/sheet-data.png)
+
+| | |
+|---|---|
+| ![Arkusz Podsumowanie](screenshots/sheet-summary.png) | ![Arkusz Zmiany](screenshots/sheet-changes.png) |
+| **Podsumowanie**: sumy, podział według przeznaczenia, braki danych | **Zmiany** od poprzedniego eksportu |
+| ![Arkusz Słownik](screenshots/sheet-dictionary.png) | ![Arkusz Metryka](screenshots/sheet-about.png) |
+| **Słownik**: co znaczy każda kolumna | **Metryka**: źródło, układ, zakres, jak czytać plik |
 
 ## Kolumny z geometrii
 
@@ -161,7 +188,10 @@ uv run --no-project --python 3.12 --with mypy --with openpyxl --with types-openp
 uv run --no-project --python 3.12 --with pytest --with openpyxl pytest -q
 scripts/qgis-test.sh 4.2.3          # test w prawdziwym QGIS (Docker); CI także 3.40 i 3.44.15
 scripts/render-xlsx.sh build/przyklad_qgis4.2.3.xlsx   # zrzuty arkuszy (LibreOffice)
+scripts/readme-media.sh             # zrzuty i animacja do screenshots/
 ```
+
+Zmiany między wersjami: [`CHANGELOG.md`](CHANGELOG.md) (po angielsku).
 
 Licencja:
 GPL-2.0-or-later ([`LICENSE`](LICENSE)).

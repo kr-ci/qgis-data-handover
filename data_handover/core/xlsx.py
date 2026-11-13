@@ -203,6 +203,8 @@ def display(value: Value, col: Optional[Column], lang: str) -> str:
     if col is not None and col.kind == "link":
         return tr(lang, "geo.link.label")  # w komórce jest ten tekst, adres siedzi w hiperłączu
     date = DATE_FORMATS.get(lang, DATE_FORMATS["en"])[1]
+    if isinstance(value, dt.datetime) and col is not None and col.kind == "date":
+        value = value.date()  # openpyxl czyta datę z poprzedniego pliku jako datetime
     if isinstance(value, dt.datetime):
         return value.strftime(date + " %H:%M")
     if isinstance(value, dt.date):

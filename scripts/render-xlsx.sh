@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Zrzuty arkuszy pliku XLSX (LibreOffice → PDF → PNG) do wizualnej kontroli.
-# Użycie: scripts/render-xlsx.sh build/plik.xlsx   → build/render/<plik>-N.png
+# Użycie: [DPI=110] scripts/render-xlsx.sh build/plik.xlsx   → build/render/<plik>-N.png
 # Uwaga: LibreOffice pokazuje układ wydruku; komentarzy i części stylów tabel Excela nie odda.
 set -euo pipefail
 FILE="${1:?podaj ścieżkę do pliku .xlsx w katalogu build/}"
@@ -14,7 +14,7 @@ NAME="$(basename "$FILE" .xlsx)"
 docker run --rm -v "$ROOT/build:/w" "$IMAGE" bash -c "
   mkdir -p /w/render && cd /tmp
   soffice --headless --convert-to pdf --outdir /tmp '/w/${FILE#build/}' >/dev/null 2>&1
-  pdftoppm -png -r 70 '/tmp/$NAME.pdf' '/w/render/$NAME'
+  pdftoppm -png -r ${DPI:-70} '/tmp/$NAME.pdf' '/w/render/$NAME'
   chmod -R a+rwX /w/render
 "
 ls "$ROOT/build/render/$NAME"*

@@ -51,7 +51,7 @@ app = start_app()
 from openpyxl import load_workbook  # noqa: E402
 
 from data_handover import classFactory, layer_reader  # noqa: E402
-from data_handover.core.i18n import LANGUAGES, tr  # noqa: E402
+from data_handover.core.i18n import LANGUAGES, count_label, tr  # noqa: E402
 from data_handover.core.model import (  # noqa: E402
     HEADER_ROW,
     THEMES,
@@ -909,6 +909,27 @@ def summary_window(iface: object, layer: QgsVectorLayer, poly: QgsVectorLayer) -
     preview = re.sub(r"<[^>]+>", "", ybox.preview.text())
     check("2019" in preview and not re.search(r"2\W019", preview),
           f"okno: podgląd pokazuje rok bez separatora ({preview!r})")
+    # R9: podgląd podaje, ile wierszy zostaje poza nim, i wymienia arkusz „Podsumowanie”.
+    file_lang = str(ybox.lang_combo.currentData())
+    tail = ybox.t("ui.preview.more", count="").strip(" …")
+    check(layer.featureCount() == 3 and tail not in preview,
+          f"okno: wszystkie 3 obiekty w podglądzie — bez „… i N w pliku” ({preview!r})")
+    bigger = make_layer()
+    extra = QgsFeature(bigger.fields())
+    extra.setAttributes([4, "16/2", "0214012", 10.5, "U", None, None, None, None])
+    bigger.dataProvider().addFeatures([extra])
+    wide = HandoverDialog(iface, None, layer=bigger)
+    more = wide.t("ui.preview.more", count=count_label(wide.lang, 1))
+    check(more in re.sub(r"<[^>]+>", "", wide.preview.text()),
+          f"okno: podgląd liczy wiersze poza podglądem, w języku okna ({more!r})")
+    wide.close()
+    QgsProject.instance().removeMapLayer(bigger.id())
+    ybox.summary_check.setChecked(False)
+    off = re.sub(r"<[^>]+>", "", ybox.preview.text())
+    ybox.summary_check.setChecked(True)
+    on = re.sub(r"<[^>]+>", "", ybox.preview.text())
+    summary_name = tr(file_lang, "sheet.summary")
+    check(summary_name not in off and summary_name in on, "okno: podgląd pokazuje arkusz podsumowania, gdy włączony")
     ybox.close()
     kept = {c.name: c.sum for c in layer_reader.saved_choices(layer, {})[0]}
     check(kept["rok"] is True and kept["pow_m2"] is False and kept["wartosc"] is True and kept["fid"] is None

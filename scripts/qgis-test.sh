@@ -11,6 +11,8 @@ docker run --rm -v "$ROOT:/src" -w /src "qgis/qgis:$TAG" bash -c "
   xvfb-run -a python3 -u tests/qgis_no_openpyxl.py || status=\$?
   export DEBIAN_FRONTEND=noninteractive; apt-get update -qq >/dev/null && apt-get install -y -qq python3-openpyxl >/dev/null
   xvfb-run -a python3 -u tests/qgis_smoke.py || status=\$?
+  # Paczka jak do plugins.qgis.org: instalacja z ZIP i uruchomienie.
+  scripts/package.sh >/dev/null && xvfb-run -a python3 -u tests/qgis_zip_install.py || status=\$?
   chmod -R a+rwX build 2>/dev/null || true
   exit \$status
 "

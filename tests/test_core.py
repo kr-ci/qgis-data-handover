@@ -155,6 +155,21 @@ def test_changes_roundtrip(tmp_path: Path) -> None:
     assert cell.coordinate in first[0].split() and first[1].dxf.fill.fgColor.rgb.endswith("FFF2CC")
 
 
+def test_changed_date_shows_without_time(tmp_path: Path) -> None:
+    """R9: data z poprzedniego pliku (openpyxl czyta ją jako datetime) bez „00:00” w „Zmianach”."""
+    first = str(tmp_path / "v1.xlsx")
+    export(first, parcels(), LOOK)
+    rows = [
+        ["12/3", "0214011", 1523.456, "zabudowa mieszkaniowa", dt.date(2026, 10, 2), "Jan Kowalski", True],
+        ["12/4", "0214011", 980.1, "usługi", dt.date(2024, 5, 3), None, False],
+    ]
+    second = str(tmp_path / "v2.xlsx")
+    export(second, parcels(rows=rows), LOOK, previous=first)
+    row = [c.value for c in load_workbook(second)["Zmiany"][HEADER_ROW + 1]]
+    assert row[2:5] == ["Aktualność", xlsx.display(dt.date(2024, 5, 3), None, "pl"),
+                        xlsx.display(dt.date(2026, 10, 2), None, "pl")]
+
+
 def test_unchanged_roundtrip_has_no_changes(tmp_path: Path) -> None:
     first = str(tmp_path / "v1.xlsx")
     export(first, parcels(), LOOK)

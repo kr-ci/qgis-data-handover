@@ -719,6 +719,7 @@ class HandoverDialog(QDialog):
         layout.addStretch()
 
         self.dictionary_box.toggled.connect(self._update_preview)
+        self.summary_check.toggled.connect(self._update_preview)
         self.about_box.toggled.connect(self._update_preview)
         self.about_checks["author"].toggled.connect(self.author_edit.setEnabled)
         self.about_checks["note"].toggled.connect(self.note_edit.setEnabled)
@@ -1064,9 +1065,13 @@ class HandoverDialog(QDialog):
 
         counts = {"all": self.layer.featureCount(), "selected": self.layer.selectedFeatureCount()} if self.layer else {}
         count = counts.get(self.scope())
-        more = html.escape(self.t("ui.preview.more", count=count_label(lang, count))) if count is not None else ""
+        # Ile wierszy zostaje poza podglądem — w języku okna, bo to opis podglądu, nie treść pliku.
+        rest = count - min(rows - 1, count) if count is not None else 0
+        more = html.escape(self.t("ui.preview.more", count=count_label(self.lang, rest))) if rest > 0 else ""
         sheets = self.sheets()
         names = [tr(lang, "sheet.data")]
+        if self.summary_check.isChecked():
+            names.append(tr(lang, "sheet.summary"))
         if sheets.dictionary:
             names.append(tr(lang, "sheet.dictionary"))
         if sheets.about:
