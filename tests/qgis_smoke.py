@@ -167,33 +167,53 @@ def background(small: QgsVectorLayer) -> None:
 
     # R10: pamięci podręcznej formattera ValueRelation nie da się przenieść do Pythona
     # (TypeError przy otwarciu okna, zgłoszone z QGIS 3.44.7) — etykiety ze słownika.
-    vocab = QgsVectorLayer("None?field=id:integer&field=name:string", "słownik", "memory")
-    for key, label in ((1, "las"), (2, "łąka")):
+    # Przegląd R10: filtr widżetu (bez zakresu formularza) jak w QGIS, przy powtórzonym kluczu
+    # pierwszy rekord, klucz 1 pasuje do wartości 1.0, słownik szukany jak w QGIS (resolveLayer).
+    vocab = QgsVectorLayer("None?field=id:integer&field=name:string&field=aktywny:integer", "słownik", "memory")
+    for key, label, active in ((1, "las", 1), (2, "łąka", 1), (1, "nieaktualny", 0), (9, "ukryty", 0)):
         f = QgsFeature(vocab.fields())
-        f.setAttributes([key, label])
+        f.setAttributes([key, label, active])
         vocab.dataProvider().addFeatures([f])
     QgsProject.instance().addMapLayer(vocab)
-    vr = QgsVectorLayer("None?field=kod:integer&field=wiele:string&field=sierota:integer", "vr", "memory")
-    for row in ([1, "{1,2}", 1], [2, "{2}", 1], [3, None, None]):
+    vr = QgsVectorLayer("None?field=kod:integer&field=wiele:string&field=sierota:integer&field=rzecz:double"
+                        "&field=po_zrodle:integer", "vr", "memory")
+    for row in ([1, "{1,2}", 1, 2.0, 2], [2, "{2}", 1, 1.0, 1], [9, None, None, None, None]):
         f = QgsFeature(vr.fields())
         f.setAttributes(row)
         vr.dataProvider().addFeatures([f])
-    base = {"Layer": vocab.id(), "LayerName": "słownik", "Key": "id", "Value": "name"}
+    base = {"Layer": vocab.id(), "LayerName": "słownik", "Key": "id", "Value": "name",
+            "FilterExpression": '"aktywny" = 1'}
     vr.setEditorWidgetSetup(0, QgsEditorWidgetSetup("ValueRelation", dict(base, AllowMulti=False)))
     vr.setEditorWidgetSetup(1, QgsEditorWidgetSetup("ValueRelation", dict(base, AllowMulti=True)))
     vr.setEditorWidgetSetup(2, QgsEditorWidgetSetup("ValueRelation", dict(base, Layer="brak", LayerName="brak")))
+    vr.setEditorWidgetSetup(3, QgsEditorWidgetSetup("ValueRelation", dict(base)))
+    vr.setEditorWidgetSetup(4, QgsEditorWidgetSetup("ValueRelation", dict(
+        base, Layer="stary_id", LayerSource=vocab.publicSource(), LayerProviderName="memory")))
+    namesake = QgsVectorLayer("None?field=id:integer&field=name:string", "słownik", "memory")
+    f = QgsFeature(namesake.fields())
+    f.setAttributes([1, "z innej warstwy"])
+    namesake.dataProvider().addFeatures([f])
+    QgsProject.instance().addMapLayer(namesake)  # ta sama nazwa, inne źródło: QGIS jej nie wybierze
     QgsProject.instance().addMapLayer(vr)
     samples = layer_reader.sample_values(vr, represented=True)
-    check(samples == {"kod": ["las", "łąka", "3"], "wiele": ["las, łąka", "łąka", None], "sierota": ["1", "1", None]},
-          f"value relation: etykiety w próbce, nieznany kod i brak słownika jako tekst ({samples})")
-    vr_plan = layer_reader.plan_package(vr, [FieldChoice(n) for n in ("kod", "wiele", "sierota")], personal={})
+    expected = {"kod": ["las", "łąka", "9"], "wiele": ["las, łąka", "łąka", None], "sierota": ["1", "1", None],
+                "rzecz": ["łąka", "las", None], "po_zrodle": ["łąka", "las", None]}
+    check(samples == expected, f"value relation: etykiety jak w QGIS — filtr, duplikat, 1.0, źródło ({samples})")
+    form = QgsApplication.fieldFormatterRegistry().fieldFormatter("ValueRelation")
+    as_qgis = {n: [None if v is None else str(form.representValue(vr, i, vr.editorWidgetSetup(i).config(), None, v))
+                   for v in (f.attributes()[i] for f in vr.getFeatures())]
+               for i, n in enumerate(vr.fields().names()) if n in ("kod", "rzecz", "po_zrodle")}
+    check(as_qgis == {"kod": ["las", "łąka", "(9)"], "rzecz": ["łąka", "las", None],
+                      "po_zrodle": ["łąka", "las", None]}, f"sonda: tak samo pokazuje QGIS ({as_qgis})")
+    vr_plan = layer_reader.plan_package(vr, [FieldChoice(n) for n in expected], personal={})
     QgsProject.instance().removeMapLayer(vocab.id())  # w tle słownik nie jest już czytany
-    check(vr_plan.read().rows == [["las", "las, łąka", "1"], ["łąka", "łąka", "1"], ["3", None, None]],
+    check(vr_plan.read().rows == [list(r) for r in zip(*expected.values())],
           "value relation: eksport z etykietami, bez sięgania do warstwy słownika w tle")
     vr_dialog = HandoverDialog(None, layer=vr)
     check(vr_dialog.layer is vr, "okno otwiera się na warstwie z value relation")
     vr_dialog.close()
     QgsProject.instance().removeMapLayer(vr.id())
+    QgsProject.instance().removeMapLayer(namesake.id())
 
     # Przegląd R6, zarzut 2: pole typu, którego warstwa w pamięci nie zna, nie może sprawić,
     # że formatter w tle dostanie oryginalną warstwę zamiast kopii pól.

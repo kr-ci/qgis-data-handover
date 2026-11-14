@@ -20,6 +20,8 @@ from qgis.core import (
     QgsCsException,
     QgsDistanceArea,
     QgsEllipsoidUtils,
+    QgsExpressionContext,
+    QgsExpressionContextUtils,
     QgsFeatureRequest,
     QgsField,
     QgsGeometry,
@@ -241,20 +243,25 @@ def representer(layer: QgsVectorLayer, index: int,
     return represent
 
 
+def _code(value: Any) -> str:
+    """Kod jako tekst do dopasowania: 1.0 i 1 to ten sam kod (jak porównanie QVariant w QGIS)."""
+    return str(int(value)) if isinstance(value, float) and value.is_integer() else str(value)
+
+
 def _value_relation(config: dict[str, Any]) -> Callable[[Any], Value]:
     """Etykiety value relation ze słownika zbudowanego tu, w wątku głównym.
 
     Pamięci podręcznej formattera nie da się przenieść do Pythona (TypeError
     w QGIS 3.44 i 4.2), a formatter bez niej czytałby warstwę słownika przy
-    każdej wartości — także w tle. Kod spoza słownika i słownik, którego nie ma
-    w projekcie, dają wartość jako tekst. Wybór wielu wartości: etykiety po
+    każdej wartości — także w tle. Słownik powstaje jak w QGIS: warstwa przez
+    `resolveLayer` (identyfikator, potem nazwa ze źródłem i dostawcą, na końcu
+    sama nazwa), filtr widżetu, o ile nie zależy od formularza. Przy powtórzonym
+    kluczu wygrywa pierwszy rekord (QGIS rozstrzyga to sortowaniem, które nie
+    zachowuje kolejności równych kluczy). Kod spoza słownika i słownik, którego
+    nie ma w projekcie, dają wartość jako tekst. Wiele wartości: etykiety po
     przecinku, w kolejności kodów.
     """
-    project = QgsProject.instance()
-    vocab = project.mapLayer(str(config.get("Layer", "")))
-    if not isinstance(vocab, QgsVectorLayer):
-        named = project.mapLayersByName(str(config.get("LayerName", "")))
-        vocab = named[0] if len(named) == 1 and isinstance(named[0], QgsVectorLayer) else None
+    vocab = QgsValueRelationFieldFormatter.resolveLayer(config, QgsProject.instance())
     labels: dict[str, str] = {}
     if vocab is not None:
         fields = vocab.fields()
@@ -262,10 +269,15 @@ def _value_relation(config: dict[str, Any]) -> Callable[[Any], Value]:
         if key >= 0 and value >= 0:
             request = QgsFeatureRequest().setSubsetOfAttributes([key, value]).setFlags(
                 Qgis.FeatureRequestFlag.NoGeometry)
+            expression = str(config.get("FilterExpression") or "")
+            if expression and not QgsValueRelationFieldFormatter.expressionRequiresFormScope(expression):
+                request.setExpressionContext(
+                    QgsExpressionContext(QgsExpressionContextUtils.globalProjectLayerScopes(vocab)))
+                request.setFilterExpression(expression)
             for feature in vocab.getFeatures(request):
                 code, label = to_python(feature.attribute(key)), to_python(feature.attribute(value))
                 if code is not None:
-                    labels[str(code)] = "" if label is None else str(label)
+                    labels.setdefault(_code(code), "" if label is None else str(label))
     multi = bool(config.get("AllowMulti"))
 
     def represent(raw: Any) -> Value:
@@ -273,7 +285,7 @@ def _value_relation(config: dict[str, Any]) -> Callable[[Any], Value]:
         if value is None:
             return None
         if not multi:
-            return labels.get(str(value), str(value))
+            return labels.get(_code(value), str(value))
         keys = QgsValueRelationFieldFormatter.valueToStringList(raw)
         return ", ".join(labels.get(k, k) for k in keys) if keys else None
 

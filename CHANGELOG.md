@@ -7,8 +7,10 @@ All notable changes to the Data Handover plugin. Versions follow
 
 - Fix: the window failed to open (`TypeError ... ValueRelationCache`) on a
   layer with a Value Relation field. Labels now come from the referenced
-  layer, read once before the export; with multiple values allowed they are
-  joined with commas. A code missing from the referenced layer, or a missing
+  layer as in the attribute form (the layer is found the same way as QGIS
+  finds it, and the widget filter applies unless it depends on the form),
+  read once before the export; with multiple values allowed they are joined
+  with commas. A code missing from the referenced layer, or a missing
   referenced layer, is written as the code itself.
 - The file language follows the plugin language: switching the plugin
   language also switches the file language, and **Restore defaults** sets
