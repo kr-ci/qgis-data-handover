@@ -200,7 +200,8 @@ def background(small: QgsVectorLayer) -> None:
                 "rzecz": ["łąka", "las", None], "po_zrodle": ["łąka", "las", None]}
     check(samples == expected, f"value relation: etykiety jak w QGIS — filtr, duplikat, 1.0, źródło ({samples})")
     form = QgsApplication.fieldFormatterRegistry().fieldFormatter("ValueRelation")
-    as_qgis = {n: [None if v is None else str(form.representValue(vr, i, vr.editorWidgetSetup(i).config(), None, v))
+    config_of = {i: vr.editorWidgetSetup(i).config() for i in range(vr.fields().count())}
+    as_qgis = {n: [None if layer_reader.to_python(v) is None else str(form.representValue(vr, i, config_of[i], None, v))
                    for v in (f.attributes()[i] for f in vr.getFeatures())]
                for i, n in enumerate(vr.fields().names()) if n in ("kod", "rzecz", "po_zrodle")}
     check(as_qgis == {"kod": ["las", "łąka", "(9)"], "rzecz": ["łąka", "las", None],
