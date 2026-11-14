@@ -17,6 +17,7 @@ from qgis.PyQt.QtCore import QByteArray, QEvent, QSize, Qt, QUrl, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QDesktopServices, QGuiApplication, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
+    QBoxLayout,
     QButtonGroup,
     QCheckBox,
     QColorDialog,
@@ -281,13 +282,17 @@ class HandoverDialog(QDialog):
             self.ui_lang_combo.addItem(LANGUAGE_NAMES[code], code)
         self.ui_lang_combo.setCurrentIndex(max(0, self.ui_lang_combo.findData(self.lang)))
         self.ui_lang_combo.currentIndexChanged.connect(self._switch_language)
-        footer = QHBoxLayout()
-        footer.setContentsMargins(12, 0, 12, 0)
-        footer.addWidget(QLabel(self.t("ui.language")))
-        footer.addWidget(self.ui_lang_combo)
-        footer.addSpacing(12)
-        footer.addWidget(buttons)
-        root.addLayout(footer)
+        language = QHBoxLayout()
+        language.addWidget(QLabel(self.t("ui.language")))
+        language.addWidget(self.ui_lang_combo)
+        language.addStretch()
+        # Jeden wiersz; na ekranie węższym niż ten wiersz — dwa (_fit).
+        self.footer = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self.footer.setContentsMargins(12, 0, 12, 0)
+        self.footer.addLayout(language)
+        self.footer.addSpacing(12)
+        self.footer.addWidget(buttons, 1)
+        root.addLayout(self.footer)
 
         self._apply_window_style()
         self._set_look(from_dict(Look, saved_json("look")))
@@ -321,6 +326,7 @@ class HandoverDialog(QDialog):
         title.setObjectName("bannerTitle")
         tagline = QLabel(self.t("ui.tagline"))
         tagline.setObjectName("bannerTagline")
+        tagline.setWordWrap(True)  # wąski ekran: podtytuł w dwóch wierszach zamiast szerszego okna
         text.addWidget(title)
         text.addWidget(tagline)
         layout.addWidget(self.banner_icon)
@@ -903,14 +909,17 @@ class HandoverDialog(QDialog):
 
     def _restore_window(self) -> None:
         """Rozmiar okna, rozdzielacz i powiększenie z ostatniego razu, a bez nich — domyślne."""
+        self.ensurePolished()  # styl okna poszerza przycisk eksportu
+        self.footer_width = self.footer.minimumSize().width()  # stopka w jednym wierszu
         saved = self.settings.value(SETTINGS + "window")
         restored = isinstance(saved, QByteArray) and self.restoreGeometry(saved)
         self._fit(self.size() if restored else DEFAULT_SIZE, restored)
         split = self.settings.value(SETTINGS + "look_splitter")
         if not (isinstance(split, QByteArray) and self.look_splitter.restoreState(split)):
             self.look_splitter.setSizes(self.look_split)
+        # Tylko wartości z listy, porównane jako tekst: uszkodzony wpis w profilu nie może zablokować okna.
         zoom = str(self.settings.value(SETTINGS + "preview_zoom", 100))
-        self._set_zoom(int(zoom) if zoom.isdigit() else 100)
+        self._set_zoom(next((z for z in ZOOMS if str(z) == zoom), 100))
 
     def _fit(self, size: QSize, keep_position: bool) -> None:
         """Okno mieści się na ekranie, na którym się otwiera: mały laptop, 4K, skalowanie, odłączony monitor.
@@ -921,6 +930,9 @@ class HandoverDialog(QDialog):
         anchor = self if keep_position else (self.parentWidget() or self)
         screen = QGuiApplication.screenAt(anchor.frameGeometry().center()) or anchor.screen()
         area = screen.availableGeometry()
+        narrow = self.footer_width > area.width()
+        self.footer.setDirection(QBoxLayout.Direction.TopToBottom if narrow else QBoxLayout.Direction.LeftToRight)
+        self.layout().activate()  # nowe minimum okna, zanim zmienimy rozmiar
         self.resize(size.boundedTo(QSize(area.width(), area.height() - FRAME)))
         if keep_position:
             self.move(max(area.left(), min(self.x(), area.right() + 1 - self.width())),

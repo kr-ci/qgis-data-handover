@@ -16,8 +16,9 @@ docker run --rm -v "$ROOT:/src" -w /src "qgis/qgis:$TAG" bash -c "
   apt-get update -qq >/dev/null
   apt-get install -y -qq python3-openpyxl >/dev/null
   xvfb-run -a python3 -u tests/qgis_smoke.py || status=\$?
-  # Okno na małym ekranie laptopa (125 %) i na 4K ze skalowaniem 200 %.
-  for screen in 1366x768:1.25 3840x2160:2; do
+  # Okno na małym ekranie laptopa (125 %), na 4K ze skalowaniem 200 % i na ekranie węższym
+  # niż stopka w jednym wierszu (1366×768 przy 200 % = 683×384 px logicznych).
+  for screen in 1366x768:1.25 3840x2160:2 1366x768:2; do
     QT_SCALE_FACTOR=\${screen#*:} xvfb-run -a -s \"-screen 0 \${screen%:*}x24\" python3 -u tests/qgis_window.py || status=\$?
   done
   # Paczka jak do plugins.qgis.org: instalacja z ZIP i uruchomienie.

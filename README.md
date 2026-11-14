@@ -46,7 +46,8 @@ Reference fields) QGIS may pause briefly when the window opens and before
 the export starts, while the labels are loaded; this cannot be cancelled.
 
 The window fits small laptop screens and high-resolution monitors with
-display scaling: when it is smaller than its content, the tabs scroll
+display scaling (checked down to 683 × 384 logical pixels, e.g. 1366 × 768
+at 200 %): when it is smaller than its content, the tabs scroll
 instead of squeezing the fields, the field table scrolls sideways, and a
 divider on the Look tab sets how much room the preview gets. The plugin
 remembers the window size, the divider position and the preview zoom.

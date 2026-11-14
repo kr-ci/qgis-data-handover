@@ -47,7 +47,8 @@ i przed startem eksportu, gdy wczytuje etykiety; tej chwili nie da się
 przerwać.
 
 Okno mieści się na małym ekranie laptopa i na monitorze wysokiej
-rozdzielczości ze skalowaniem: gdy jest mniejsze niż jego zawartość,
+rozdzielczości ze skalowaniem (sprawdzone do 683 × 384 pikseli logicznych,
+np. 1366 × 768 przy 200%): gdy jest mniejsze niż jego zawartość,
 zakładki przewijają się, zamiast ściskać pola, tabela pól przewija się
 w poziomie, a rozdzielacz w zakładce Wygląd ustala, ile miejsca dostaje
 podgląd. Wtyczka zapamiętuje rozmiar okna, położenie rozdzielacza
