@@ -75,7 +75,6 @@ from .layer_reader import FieldChoice
 from .plugin import SETTINGS, UI_LANGUAGE, saved_json, ui_language
 
 PREVIOUS = "data_handover/previous"
-DEFAULT_LANGUAGE = "en"  # język pliku, dopóki użytkownik nie wybierze innego
 # Stały wygląd okna — niezależny od stylu pliku, który użytkownik ustawia.
 ACCENT, ACCENT_TEXT = "1F3A5F", "FFFFFF"
 ICON = os.path.join(os.path.dirname(__file__), "icon.svg")
@@ -684,7 +683,8 @@ class HandoverDialog(QDialog):
         self.lang_combo = QComboBox()
         for code in LANGUAGES:
             self.lang_combo.addItem(LANGUAGE_NAMES[code], code)
-        saved_lang = str(self.settings.value(SETTINGS + "file_language", DEFAULT_LANGUAGE))
+        # Język pliku domyślnie idzie za językiem okna; użytkownik może wybrać inny.
+        saved_lang = str(self.settings.value(SETTINGS + "file_language", self.lang) or self.lang)
         self.lang_combo.setCurrentIndex(max(0, self.lang_combo.findData(saved_lang)))
         self.lang_combo.currentIndexChanged.connect(self._update_preview)
         form.addRow(self.t("ui.file.title"), self.title_edit)
@@ -842,15 +842,21 @@ class HandoverDialog(QDialog):
         )
 
     def reset_settings(self) -> None:
-        """Przywraca domyślny wygląd, arkusze i język pliku (opisy kolumn w projekcie zostają)."""
+        """Przywraca domyślny wygląd, arkusze i język pliku — język okna (opisy kolumn w projekcie zostają)."""
         self._set_look(Look())
         self._set_sheets(Sheets())
-        self.lang_combo.setCurrentIndex(max(0, self.lang_combo.findData(DEFAULT_LANGUAGE)))
+        self.lang_combo.setCurrentIndex(max(0, self.lang_combo.findData(self.lang)))
 
     def _switch_language(self, *_args: Any) -> None:
-        """Zapisuje język okna i bieżące ustawienia; wtyczka otworzy okno od nowa."""
-        self.settings.setValue(UI_LANGUAGE, str(self.ui_lang_combo.currentData()))
+        """Zapisuje język okna i bieżące ustawienia; wtyczka otworzy okno od nowa.
+
+        Język pliku przechodzi na język okna (w drugą stronę nigdy): to nowy punkt
+        wyjścia, który użytkownik może zmienić w zakładce Arkusze.
+        """
+        language = str(self.ui_lang_combo.currentData())
+        self.settings.setValue(UI_LANGUAGE, language)
         self._save_state()
+        self.settings.setValue(SETTINGS + "file_language", language)
         self.relaunch = True
         self.reject()
 

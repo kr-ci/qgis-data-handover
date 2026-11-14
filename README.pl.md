@@ -20,7 +20,7 @@ i dymki z opisem kolumn.*
 |---|---|
 | **Dane** | warstwa, zakres (wszystkie / zaznaczone / w zasięgu mapy), kolumny i ich kolejność, nagłówek, jednostka i opis kolumny (zapamiętywane w projekcie), decyzja o danych osobowych, kolumny z geometrii (powierzchnia albo długość, współrzędne, link do mapy) |
 | **Wygląd** | tabela Excela albo zwykły zakres (z filtrami lub bez); osobno dla nagłówków i zawartości: czcionka, rozmiar, kolor, pogrubienie, kursywa, podkreślenie, tło, wyrównanie, zawijanie; pasy co drugi wiersz; obramowanie (linia, kolor, wszystkie linie / tylko poziome / tylko obrys); tytuł nad danymi, zamrożony nagłówek, siatka, opis w dymku nagłówka, szerokość kolumn, orientacja wydruku, kolor karty; gotowe kolorystyki i podgląd na żywo |
-| **Arkusze** | tytuł, język pliku (10 języków, domyślnie angielski), arkusze dodatkowe — domyślnie wyłączone — z wyborem zawartości |
+| **Arkusze** | tytuł, język pliku (10 języków, domyślnie język wtyczki), arkusze dodatkowe — domyślnie wyłączone — z wyborem zawartości |
 | **Zmiany** | porównanie z poprzednim eksportem według kolumny-klucza |
 
 ## Co jest w pliku
@@ -46,11 +46,13 @@ Relation, Relation Reference) QGIS może chwilę stać przed startem eksportu,
 gdy wczytuje etykiety.
 
 Przycisk **Przywróć domyślne** na dole okna zeruje wygląd, arkusze i język
-pliku (opisy kolumn zapisane w projekcie zostają). Okno i plik są dostępne
+pliku — wraca on do języka okna (opisy kolumn zapisane w projekcie zostają). Okno i plik są dostępne
 po angielsku, niemiecku, francusku, hiszpańsku, portugalsku, polsku,
 rosyjsku, koreańsku, japońsku i chińsku. Język okna wybierasz na liście
-„Język wtyczki” w stopce (domyślnie angielski), język treści pliku —
-osobno w zakładce Arkusze. Nagłówki i wartości kolumn pochodzą z warstwy,
+„Język wtyczki” w stopce (domyślnie angielski). Język treści pliku idzie
+za nim: zmiana języka wtyczki przestawia też język pliku, a potem możesz
+wybrać inny język pliku w zakładce Arkusze (to nigdy nie zmienia języka
+okna). Nagłówki i wartości kolumn pochodzą z warstwy,
 więc zostają w języku danych.
 
 ## Zrzuty ekranu

@@ -68,7 +68,7 @@ from data_handover.dialog import HandoverDialog  # noqa: E402
 from data_handover.export_task import ExportTask  # noqa: E402
 from data_handover.export_task import start as start_task  # noqa: E402
 from data_handover.layer_reader import FieldChoice  # noqa: E402
-from data_handover.plugin import UI_LANGUAGE, ui_language  # noqa: E402
+from data_handover.plugin import SETTINGS, UI_LANGUAGE, ui_language  # noqa: E402
 
 VERSION = Qgis.version().split("-")[0]
 SCREENS = ROOT / "build" / "screens"
@@ -164,6 +164,36 @@ def background(small: QgsVectorLayer) -> None:
     rel = layer_reader.plan_package(broken, [FieldChoice("ref")], personal={})
     check(rel.read().rows == [["7"]] and rel.converters[0].__name__ == "<lambda>",  # nie formatter
           "relacja bez pamięci podręcznej: wartość jako tekst, bez formattera w tle")
+
+    # R10: pamięci podręcznej formattera ValueRelation nie da się przenieść do Pythona
+    # (TypeError przy otwarciu okna, zgłoszone z QGIS 3.44.7) — etykiety ze słownika.
+    vocab = QgsVectorLayer("None?field=id:integer&field=name:string", "słownik", "memory")
+    for key, label in ((1, "las"), (2, "łąka")):
+        f = QgsFeature(vocab.fields())
+        f.setAttributes([key, label])
+        vocab.dataProvider().addFeatures([f])
+    QgsProject.instance().addMapLayer(vocab)
+    vr = QgsVectorLayer("None?field=kod:integer&field=wiele:string&field=sierota:integer", "vr", "memory")
+    for row in ([1, "{1,2}", 1], [2, "{2}", 1], [3, None, None]):
+        f = QgsFeature(vr.fields())
+        f.setAttributes(row)
+        vr.dataProvider().addFeatures([f])
+    base = {"Layer": vocab.id(), "LayerName": "słownik", "Key": "id", "Value": "name"}
+    vr.setEditorWidgetSetup(0, QgsEditorWidgetSetup("ValueRelation", dict(base, AllowMulti=False)))
+    vr.setEditorWidgetSetup(1, QgsEditorWidgetSetup("ValueRelation", dict(base, AllowMulti=True)))
+    vr.setEditorWidgetSetup(2, QgsEditorWidgetSetup("ValueRelation", dict(base, Layer="brak", LayerName="brak")))
+    QgsProject.instance().addMapLayer(vr)
+    samples = layer_reader.sample_values(vr, represented=True)
+    check(samples == {"kod": ["las", "łąka", "3"], "wiele": ["las, łąka", "łąka", None], "sierota": ["1", "1", None]},
+          f"value relation: etykiety w próbce, nieznany kod i brak słownika jako tekst ({samples})")
+    vr_plan = layer_reader.plan_package(vr, [FieldChoice(n) for n in ("kod", "wiele", "sierota")], personal={})
+    QgsProject.instance().removeMapLayer(vocab.id())  # w tle słownik nie jest już czytany
+    check(vr_plan.read().rows == [["las", "las, łąka", "1"], ["łąka", "łąka", "1"], ["3", None, None]],
+          "value relation: eksport z etykietami, bez sięgania do warstwy słownika w tle")
+    vr_dialog = HandoverDialog(None, layer=vr)
+    check(vr_dialog.layer is vr, "okno otwiera się na warstwie z value relation")
+    vr_dialog.close()
+    QgsProject.instance().removeMapLayer(vr.id())
 
     # Przegląd R6, zarzut 2: pole typu, którego warstwa w pamięci nie zna, nie może sprawić,
     # że formatter w tle dostanie oryginalną warstwę zamiast kopii pól.
@@ -1094,7 +1124,21 @@ def main() -> None:
     german.show()
     QApplication.processEvents()
     german.grab().save(str(SCREENS / f"okno_de_qgis{VERSION}.png"))
+    # R10: język pliku idzie za językiem okna, nigdy w drugą stronę.
+    check(german.lang_combo.currentData() == "de", "zmiana języka okna przestawia język pliku")
+    german.lang_combo.setCurrentIndex(german.lang_combo.findData("fr"))
+    german._save_state()
     german.close()
+    french_file = HandoverDialog(None, None, layer=layer)
+    check(french_file.lang_combo.currentData() == "fr" and ui_language() == "de",
+          "własny wybór języka pliku zostaje i nie zmienia języka okna")
+    french_file.reset_settings()
+    check(french_file.lang_combo.currentData() == "de", "„Przywróć domyślne”: język pliku = język okna")
+    french_file.ui_lang_combo.setCurrentIndex(french_file.ui_lang_combo.findData("es"))
+    spanish = HandoverDialog(None, None, layer=layer)
+    check(spanish.lang_combo.currentData() == "es", "kolejna zmiana języka okna znów przestawia język pliku")
+    spanish.close()
+    QgsSettings().remove(SETTINGS + "file_language")
     QgsSettings().remove(UI_LANGUAGE)
     personal_rows = [r for r in range(dialog.table.rowCount())
                      if dialog.table.item(r, 0).text() in ("nazwisko", "nr_ident")]

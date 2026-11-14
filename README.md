@@ -20,7 +20,7 @@ notes.*
 |---|---|
 | **Data** | layer, scope (all / selected / in map extent), columns and their order, header, unit and description of each column (saved in the project), the decision about personal data, columns from geometry (area or length, coordinates, map link) |
 | **Look** | Excel table or plain range (with or without filters); separately for headers and content: font, size, colour, bold, italic, underline, fill, alignment, wrapping; banded rows; borders (line, colour, all lines / horizontal only / outline only); title above the data, frozen header, gridlines, description in a header comment, column width, print orientation, tab colour; colour presets and a live preview |
-| **Sheets** | title, file language (10 languages, English by default), extra sheets — off by default — with a choice of what goes in |
+| **Sheets** | title, file language (10 languages, the plugin language by default), extra sheets — off by default — with a choice of what goes in |
 | **Changes** | comparison with the previous export by a key column |
 
 ## What is in the file
@@ -46,12 +46,14 @@ Reference fields) QGIS may pause briefly before the export starts, while
 the labels are loaded.
 
 The **Restore defaults** button at the bottom of the window resets the
-look, the sheets and the file language (column descriptions saved in the
-project stay). The window and the file are available in English, German,
+look, the sheets and the file language to the window language (column
+descriptions saved in the project stay). The window and the file are available in English, German,
 French, Spanish, Portuguese, Polish, Russian, Korean, Japanese and
 Simplified Chinese. Pick the window language from the "Plugin language"
-list in the footer (English by default); the file language is a separate
-choice on the Sheets tab. Column headers and values come from the layer,
+list in the footer (English by default). The file language follows it:
+switching the plugin language also switches the file language, and you
+can then pick a different file language on the Sheets tab (this never
+changes the window language). Column headers and values come from the layer,
 so they stay in the language of the data.
 
 ## Screenshots

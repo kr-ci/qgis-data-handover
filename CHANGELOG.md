@@ -3,6 +3,20 @@
 All notable changes to the Data Handover plugin. Versions follow
 `version` in [`data_handover/metadata.txt`](data_handover/metadata.txt).
 
+## 1.0.2
+
+- Fix: the window failed to open (`TypeError ... ValueRelationCache`) on a
+  layer with a Value Relation field. Labels now come from the referenced
+  layer, read once before the export; with multiple values allowed they are
+  joined with commas. A code missing from the referenced layer, or a missing
+  referenced layer, is written as the code itself.
+- The file language follows the plugin language: switching the plugin
+  language also switches the file language, and **Restore defaults** sets
+  it back to the plugin language. Choosing a different file language never
+  changes the window language. The Processing algorithm uses the plugin
+  language when no file language has been saved yet.
+- A shorter plugin description and changelog in the Plugin Manager.
+
 ## 1.0.1
 
 - New plugin icon (a table handed over on an open palm), also in the window

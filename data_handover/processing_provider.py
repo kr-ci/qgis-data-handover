@@ -110,7 +110,7 @@ class PackageAlgorithm(QgsProcessingAlgorithm):
         settings = QgsSettings()
         lang_index = self.parameterAsEnum(parameters, self.LANGUAGE, context)
         language = (LANGUAGES[lang_index - 1] if lang_index > 0
-                    else supported(str(settings.value(SETTINGS + "file_language", "en") or "en")))
+                    else supported(str(settings.value(SETTINGS + "file_language", "") or ui_language())))
         self.look = from_dict(Look, saved_json("look"))
         theme_index = self.parameterAsEnum(parameters, self.THEME, context)
         if theme_index > 0:

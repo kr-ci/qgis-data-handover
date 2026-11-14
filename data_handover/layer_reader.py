@@ -27,6 +27,7 @@ from qgis.core import (
     QgsProject,
     QgsRectangle,
     QgsUnitTypes,
+    QgsValueRelationFieldFormatter,
     QgsVectorLayer,
     QgsVectorLayerFeatureSource,
 )
@@ -221,6 +222,8 @@ def representer(layer: QgsVectorLayer, index: int,
     if setup.type() not in _REPRESENTED_WIDGETS:
         return None
     config = setup.config()
+    if setup.type() == "ValueRelation":
+        return _value_relation(config)
     formatter = QgsApplication.fieldFormatterRegistry().fieldFormatter(setup.type())
     cache = formatter.createCache(layer, index, config)
     if setup.type() == "RelationReference" and to_python(cache) is None:
@@ -234,6 +237,45 @@ def representer(layer: QgsVectorLayer, index: int,
         if to_python(raw) is None:
             return None
         return to_python(formatter.representValue(target, index, config, cache, raw))
+
+    return represent
+
+
+def _value_relation(config: dict[str, Any]) -> Callable[[Any], Value]:
+    """Etykiety value relation ze słownika zbudowanego tu, w wątku głównym.
+
+    Pamięci podręcznej formattera nie da się przenieść do Pythona (TypeError
+    w QGIS 3.44 i 4.2), a formatter bez niej czytałby warstwę słownika przy
+    każdej wartości — także w tle. Kod spoza słownika i słownik, którego nie ma
+    w projekcie, dają wartość jako tekst. Wybór wielu wartości: etykiety po
+    przecinku, w kolejności kodów.
+    """
+    project = QgsProject.instance()
+    vocab = project.mapLayer(str(config.get("Layer", "")))
+    if not isinstance(vocab, QgsVectorLayer):
+        named = project.mapLayersByName(str(config.get("LayerName", "")))
+        vocab = named[0] if len(named) == 1 and isinstance(named[0], QgsVectorLayer) else None
+    labels: dict[str, str] = {}
+    if vocab is not None:
+        fields = vocab.fields()
+        key, value = fields.indexOf(str(config.get("Key", ""))), fields.indexOf(str(config.get("Value", "")))
+        if key >= 0 and value >= 0:
+            request = QgsFeatureRequest().setSubsetOfAttributes([key, value]).setFlags(
+                Qgis.FeatureRequestFlag.NoGeometry)
+            for feature in vocab.getFeatures(request):
+                code, label = to_python(feature.attribute(key)), to_python(feature.attribute(value))
+                if code is not None:
+                    labels[str(code)] = "" if label is None else str(label)
+    multi = bool(config.get("AllowMulti"))
+
+    def represent(raw: Any) -> Value:
+        value = to_python(raw)
+        if value is None:
+            return None
+        if not multi:
+            return labels.get(str(value), str(value))
+        keys = QgsValueRelationFieldFormatter.valueToStringList(raw)
+        return ", ".join(labels.get(k, k) for k in keys) if keys else None
 
     return represent
 
