@@ -13,8 +13,8 @@ from typing import Any, Optional
 
 from qgis.core import Qgis, QgsMessageLog, QgsProject, QgsSettings, QgsVectorLayer
 from qgis.gui import QgsCheckableComboBox, QgsColorButton, QgsFieldComboBox, QgsFileWidget, QgsMapLayerComboBox
-from qgis.PyQt.QtCore import Qt, QUrl, pyqtSignal
-from qgis.PyQt.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPixmap
+from qgis.PyQt.QtCore import QByteArray, QEvent, QSize, Qt, QUrl, pyqtSignal
+from qgis.PyQt.QtGui import QColor, QDesktopServices, QGuiApplication, QIcon, QPainter, QPixmap
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
@@ -40,6 +40,7 @@ from qgis.PyQt.QtWidgets import (
     QRadioButton,
     QScrollArea,
     QSpinBox,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -86,11 +87,24 @@ PERSONAL_COLOR = QColor("#9C2B23")
 # Grubość i rodzaj linii w podglądzie HTML odpowiadające liniom Excela.
 CSS_BORDER = {"hair": "1px dotted", "thin": "1px solid", "medium": "2px solid", "thick": "3px solid",
               "dashed": "1px dashed", "dotted": "1px dotted", "double": "3px double"}
+DEFAULT_SIZE = QSize(1000, 720)
+# ponytail: przybliżona wysokość paska tytułu — Qt zna ramkę okna dopiero po jego pokazaniu.
+FRAME = 40
+ZOOMS = (50, 67, 75, 90, 100, 110, 125, 150, 175, 200)  # powiększenie podglądu w %, jak w przeglądarkach
 
 
 def safe_filename(text: str) -> str:
     text = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', " ", text).strip().replace(" ", "_")
     return text[:80] or "dane"
+
+
+def scrolled(widget: QWidget) -> QScrollArea:
+    """Zawartość przewija się, gdy okno jest mniejsze (mały ekran), zamiast ściskać pola."""
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
+    scroll.setWidget(widget)
+    return scroll
 
 
 def swatch(theme: Theme, size: int = 26) -> QIcon:
@@ -232,19 +246,19 @@ class HandoverDialog(QDialog):
         self._summable: set[str] = set()  # pola, które w tej chwili wolno sumować
         self._group_by = ""  # zapamiętana kolumna grupowania; do pliku idzie tylko to, co pokazuje lista
         self._refreshing = False
+        self.zoom = 100
 
         self.setWindowTitle(self.t("ui.title"))
         self.setWindowIcon(QIcon(ICON))
-        self.setMinimumSize(980, 700)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 12)
         root.addWidget(self._banner())
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(self._data_tab(), self.t("ui.tab.data"))
+        self.tabs.addTab(scrolled(self._data_tab()), self.t("ui.tab.data"))
         self.tabs.addTab(self._look_tab(), self.t("ui.tab.look"))
-        self.tabs.addTab(self._sheets_tab(), self.t("ui.tab.sheets"))
-        self.tabs.addTab(self._changes_tab(), self.t("ui.tab.changes"))
+        self.tabs.addTab(scrolled(self._sheets_tab()), self.t("ui.tab.sheets"))
+        self.tabs.addTab(scrolled(self._changes_tab()), self.t("ui.tab.changes"))
         body = QVBoxLayout()
         body.setContentsMargins(12, 8, 12, 0)
         body.addWidget(self.tabs)
@@ -282,6 +296,7 @@ class HandoverDialog(QDialog):
         if layer is not None:
             self.layer_combo.setLayer(layer)
         self._load_layer(self.layer_combo.currentLayer())
+        self._restore_window()
 
     def t(self, text_id: str, **kwargs: object) -> str:
         return tr(self.lang, text_id, **kwargs)
@@ -352,10 +367,14 @@ class HandoverDialog(QDialog):
                           (COL_KIND, QHeaderView.ResizeMode.ResizeToContents),
                           (COL_HEADER, QHeaderView.ResizeMode.Interactive),
                           (COL_UNIT, QHeaderView.ResizeMode.ResizeToContents),
-                          (COL_DESC, QHeaderView.ResizeMode.Stretch),
+                          (COL_DESC, QHeaderView.ResizeMode.Interactive),
                           (COL_PRIVACY, QHeaderView.ResizeMode.ResizeToContents)):
             header.setSectionResizeMode(col, mode)
         self.table.setColumnWidth(COL_HEADER, 180)
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.table.setMinimumHeight(180)
+        header.sectionResized.connect(self._fit_description)
+        self.table.viewport().installEventFilter(self)
         self.table.itemChanged.connect(self._update_preview)
         layout.addWidget(self.table)
 
@@ -374,6 +393,19 @@ class HandoverDialog(QDialog):
         layout.addWidget(self._geo_box())
         layout.addWidget(self._summary_box())
         return tab
+
+    def eventFilter(self, watched: Any, event: Any) -> bool:  # noqa: N802 - nazwa z Qt
+        if watched is self.table.viewport() and event.type() == QEvent.Type.Resize:
+            self._fit_description()
+        return super().eventFilter(watched, event)
+
+    def _fit_description(self, column: int = -1, *_sizes: int) -> None:
+        """Opis wypełnia wolne miejsce tabeli pól, ale ma co najmniej 300 px — w wąskim oknie
+        tabela przewija się w poziomie, zamiast ściskać kolumny. Brzeg opisu przeciąga użytkownik."""
+        if column == COL_DESC:
+            return
+        others = sum(self.table.columnWidth(c) for c in range(self.table.columnCount()) if c != COL_DESC)
+        self.table.setColumnWidth(COL_DESC, max(300, self.table.viewport().width() - others))
 
     def _geo_box(self) -> QGroupBox:
         """Kolumny z geometrii (R7, wariant A makiet): pod listą pól, bo też trafiają do tabeli."""
@@ -640,26 +672,42 @@ class HandoverDialog(QDialog):
         column.addWidget(border_box)
         column.addStretch()
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(content.sizeHint().width() + 20)
-        scroll.setWidget(content)
-        outer.addWidget(scroll, 3)
+        # Rozdzielacz: opcje po lewej, podgląd po prawej; nadmiar szerokości dostaje podgląd.
+        self.look_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.look_splitter.setChildrenCollapsible(False)
+        self.look_splitter.addWidget(scrolled(content))
+        self.look_split = [content.sizeHint().width() + 20, 420]
 
-        preview_box = QVBoxLayout()
+        panel = QWidget()
+        preview_box = QVBoxLayout(panel)
+        preview_box.setContentsMargins(6, 0, 0, 0)
+        zoom_row = QHBoxLayout()
         caption = QLabel(self.t("ui.file.preview"))
         caption.setObjectName("hint")
+        zoom_row.addWidget(caption)
+        zoom_row.addStretch()
+        self.zoom_out_button = QToolButton()
+        self.zoom_out_button.setText("−")
+        self.zoom_out_button.setToolTip(self.t("ui.preview.zoom_out"))
+        self.zoom_out_button.clicked.connect(lambda: self._zoom(-1))
+        self.zoom_label = QLabel()
+        self.zoom_in_button = QToolButton()
+        self.zoom_in_button.setText("+")
+        self.zoom_in_button.setToolTip(self.t("ui.preview.zoom_in"))
+        self.zoom_in_button.clicked.connect(lambda: self._zoom(1))
+        for widget in (self.zoom_out_button, self.zoom_label, self.zoom_in_button):
+            zoom_row.addWidget(widget)
         self.preview = QLabel()
         self.preview.setTextFormat(Qt.TextFormat.RichText)
         self.preview.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.preview.setObjectName("preview")
-        self.preview.setMinimumWidth(330)
-        self.preview.setWordWrap(True)
-        preview_box.addWidget(caption)
-        preview_box.addWidget(self.preview, 1)
-        outer.addLayout(preview_box, 2)
+        self.preview_scroll = scrolled(self.preview)
+        preview_box.addLayout(zoom_row)
+        preview_box.addWidget(self.preview_scroll, 1)
+        self.look_splitter.addWidget(panel)
+        self.look_splitter.setStretchFactor(0, 0)
+        self.look_splitter.setStretchFactor(1, 1)
+        outer.addWidget(self.look_splitter)
 
         for check in (self.as_table_check, self.autofilter_check, self.title_check, self.freeze_check,
                       self.comments_check, self.gridlines_check, self.stripes_check):
@@ -842,10 +890,58 @@ class HandoverDialog(QDialog):
         )
 
     def reset_settings(self) -> None:
-        """Przywraca domyślny wygląd, arkusze i język pliku — język okna (opisy kolumn w projekcie zostają)."""
+        """Przywraca domyślny wygląd, arkusze, język pliku (= język okna), rozmiar okna, rozdzielacz
+        i powiększenie podglądu (opisy kolumn w projekcie zostają)."""
         self._set_look(Look())
         self._set_sheets(Sheets())
         self.lang_combo.setCurrentIndex(max(0, self.lang_combo.findData(self.lang)))
+        self._fit(DEFAULT_SIZE, self.isVisible())
+        self.look_splitter.setSizes(self.look_split)
+        self._set_zoom(100)
+
+    # -------------------------------------------------------------- window
+
+    def _restore_window(self) -> None:
+        """Rozmiar okna, rozdzielacz i powiększenie z ostatniego razu, a bez nich — domyślne."""
+        saved = self.settings.value(SETTINGS + "window")
+        restored = isinstance(saved, QByteArray) and self.restoreGeometry(saved)
+        self._fit(self.size() if restored else DEFAULT_SIZE, restored)
+        split = self.settings.value(SETTINGS + "look_splitter")
+        if not (isinstance(split, QByteArray) and self.look_splitter.restoreState(split)):
+            self.look_splitter.setSizes(self.look_split)
+        zoom = str(self.settings.value(SETTINGS + "preview_zoom", 100))
+        self._set_zoom(int(zoom) if zoom.isdigit() else 100)
+
+    def _fit(self, size: QSize, keep_position: bool) -> None:
+        """Okno mieści się na ekranie, na którym się otwiera: mały laptop, 4K, skalowanie, odłączony monitor.
+
+        Bez zapisanego położenia okno samo ustawia się na środku okna QGIS (QDialog), więc
+        liczy się ekran QGIS; z zapisanym — ekran, na którym okno było, a przesuwamy je na ekran.
+        """
+        anchor = self if keep_position else (self.parentWidget() or self)
+        screen = QGuiApplication.screenAt(anchor.frameGeometry().center()) or anchor.screen()
+        area = screen.availableGeometry()
+        self.resize(size.boundedTo(QSize(area.width(), area.height() - FRAME)))
+        if keep_position:
+            self.move(max(area.left(), min(self.x(), area.right() + 1 - self.width())),
+                      max(area.top(), min(self.y(), area.bottom() + 1 - self.height() - FRAME)))
+
+    def _zoom(self, step: int) -> None:
+        self._set_zoom(ZOOMS[ZOOMS.index(self.zoom) + step])
+
+    def _set_zoom(self, zoom: int) -> None:
+        self.zoom = zoom if zoom in ZOOMS else 100
+        self.zoom_label.setText(f"{self.zoom}%")
+        self.zoom_out_button.setEnabled(self.zoom > ZOOMS[0])
+        self.zoom_in_button.setEnabled(self.zoom < ZOOMS[-1])
+        self._update_preview()
+
+    def done(self, result: int) -> None:
+        """Każde zamknięcie okna (eksport, Zamknij, Esc, zmiana języka) zapamiętuje jego układ."""
+        for name, value in (("window", self.saveGeometry()), ("look_splitter", self.look_splitter.saveState()),
+                            ("preview_zoom", self.zoom)):
+            self.settings.setValue(SETTINGS + name, value)
+        super().done(result)
 
     def _switch_language(self, *_args: Any) -> None:
         """Zapisuje język okna i bieżące ustawienia; wtyczka otworzy okno od nowa.
@@ -1037,10 +1133,14 @@ class HandoverDialog(QDialog):
         columns = list(xlsx._plain_years(Package("", columns, sample_rows), sample_rows).columns)
         side = CSS_BORDER.get(look.border_style, "")
         line = f"{side} #{look.border_color}" if side else ""
+        zoom = self.zoom / 100
+
+        def scaled(value: float) -> str:
+            return f"{value * zoom:.4g}"
 
         def cell_css(style: CellLook, align: str, r: int, c: int, rows: int, cols: int, fill: str) -> str:
-            css = [f"font-family:'{style.font}'", f"font-size:{style.size}pt", f"color:#{style.color}",
-                   "padding:3px 7px", f"text-align:{align}"]
+            css = [f"font-family:'{style.font}'", f"font-size:{scaled(style.size)}pt", f"color:#{style.color}",
+                   f"padding:{scaled(3)}px {scaled(7)}px", f"text-align:{align}"]
             if style.bold:
                 css.append("font-weight:bold")
             if style.italic:
@@ -1106,7 +1206,7 @@ class HandoverDialog(QDialog):
         title = ""
         if look.show_title:
             text = html.escape(self.title_edit.text() or (self.layer.name() if self.layer else ""))
-            title = (f"<div style=\"font-family:'{look.body.font}'; font-size:{min(look.title_size, 20)}pt;"
+            title = (f"<div style=\"font-family:'{look.body.font}'; font-size:{scaled(min(look.title_size, 20))}pt;"
                      f" font-weight:600; color:#{look.title_color};\">{text}</div>"
                      f"<div style='color:#595959; font-style:italic; margin-bottom:6px;'>"
                      f"{html.escape(count_label(lang, count or 0))}</div>")
@@ -1114,12 +1214,14 @@ class HandoverDialog(QDialog):
         flags = " · ".join(t for t, on in ((self.t("ui.look.as_table"), look.as_table),
                                            (self.t("ui.look.autofilter"), filters and not look.as_table),
                                            (self.t("ui.look.freeze"), look.freeze_header)) if on)
+        base = self.preview.font().pointSizeF()
         self.preview.setText(
+            f"<div style='font-size:{scaled(base if base > 0 else 9)}pt;'>"
             f"{title}<table cellspacing='0' cellpadding='0' style='border-collapse:collapse;'>"
             f"<tr>{head}</tr>{body}</table>"
             f"<div style='color:#595959; margin-top:6px;'>{more}</div>"
             f"<div style='color:#595959; margin-top:10px;'>{html.escape(flags)}</div>"
-            f"<div style='margin-top:10px;'>{tabs}</div>"
+            f"<div style='margin-top:10px;'>{tabs}</div></div>"
         )
 
     # -------------------------------------------------------------- export

@@ -85,6 +85,8 @@
  "ui.theme.terracotta": "赤陶",
  "ui.theme.plum": "李紫",
  "ui.preview.more": "…… 文件中另有 {count}",
+ "ui.preview.zoom_in": "放大",
+ "ui.preview.zoom_out": "缩小",
  "ui.title": "Data Handover",
  "ui.tagline": "将属性表导出为格式化的 Excel 工作簿。",
  "ui.tab.data": "数据",

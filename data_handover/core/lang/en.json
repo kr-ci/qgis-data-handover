@@ -85,6 +85,8 @@
  "ui.theme.terracotta": "Terracotta",
  "ui.theme.plum": "Plum",
  "ui.preview.more": "… and {count} in the file",
+ "ui.preview.zoom_in": "Zoom in",
+ "ui.preview.zoom_out": "Zoom out",
  "ui.title": "Data Handover",
  "ui.tagline": "Export the attribute table to a formatted Excel workbook.",
  "ui.tab.data": "Data",

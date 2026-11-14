@@ -85,6 +85,8 @@
  "ui.theme.terracotta": "Terracota",
  "ui.theme.plum": "Ciruela",
  "ui.preview.more": "… y {count} en el archivo",
+ "ui.preview.zoom_in": "Acercar",
+ "ui.preview.zoom_out": "Alejar",
  "ui.title": "Data Handover",
  "ui.tagline": "Exporte la tabla de atributos a un libro de Excel con formato.",
  "ui.tab.data": "Datos",

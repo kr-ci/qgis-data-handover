@@ -85,6 +85,8 @@
  "ui.theme.terracotta": "テラコッタ",
  "ui.theme.plum": "プラム",
  "ui.preview.more": "… ほかファイル内に {count}",
+ "ui.preview.zoom_in": "拡大",
+ "ui.preview.zoom_out": "縮小",
  "ui.title": "Data Handover",
  "ui.tagline": "属性テーブルを書式設定済みの Excel ブックにエクスポートします。",
  "ui.tab.data": "データ",

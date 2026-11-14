@@ -85,6 +85,8 @@
  "ui.theme.terracotta": "Terakota",
  "ui.theme.plum": "Śliwka",
  "ui.preview.more": "… i {count} w pliku",
+ "ui.preview.zoom_in": "Powiększ",
+ "ui.preview.zoom_out": "Pomniejsz",
  "ui.title": "Data Handover — przekazanie danych",
  "ui.tagline": "Eksport tabeli atrybutów do sformatowanego skoroszytu Excela.",
  "ui.tab.data": "Dane",

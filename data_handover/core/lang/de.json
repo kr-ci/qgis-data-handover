@@ -85,6 +85,8 @@
  "ui.theme.terracotta": "Terrakotta",
  "ui.theme.plum": "Pflaume",
  "ui.preview.more": "… und {count} in der Datei",
+ "ui.preview.zoom_in": "Vergrößern",
+ "ui.preview.zoom_out": "Verkleinern",
  "ui.title": "Data Handover",
  "ui.tagline": "Exportiert die Attributtabelle in eine formatierte Excel-Arbeitsmappe.",
  "ui.tab.data": "Daten",

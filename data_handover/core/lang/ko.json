@@ -85,6 +85,8 @@
  "ui.theme.terracotta": "테라코타",
  "ui.theme.plum": "플럼",
  "ui.preview.more": "… 외 파일에 {count}",
+ "ui.preview.zoom_in": "확대",
+ "ui.preview.zoom_out": "축소",
  "ui.title": "Data Handover",
  "ui.tagline": "속성 테이블을 서식이 적용된 Excel 통합 문서로 내보냅니다.",
  "ui.tab.data": "데이터",

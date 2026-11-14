@@ -84,16 +84,14 @@ class DataHandoverPlugin:
             return
         from .dialog import HandoverDialog
 
-        layer, tab, geometry = self.iface.activeLayer(), 0, None
-        while True:  # zmiana języka okna = to samo okno zbudowane od nowa w nowym języku
+        layer, tab = self.iface.activeLayer(), 0
+        while True:  # zmiana języka okna = to samo okno zbudowane od nowa w nowym języku (rozmiar pamięta okno)
             dialog = HandoverDialog(self.iface, self.iface.mainWindow(), layer=layer)
             dialog.tabs.setCurrentIndex(tab)
-            if geometry is not None:
-                dialog.restoreGeometry(geometry)
             dialog.exec()
             if not dialog.relaunch:
                 break
-            layer, tab, geometry = dialog.layer, dialog.tabs.currentIndex(), dialog.saveGeometry()
+            layer, tab = dialog.layer, dialog.tabs.currentIndex()
         for action in (self.action, self.layer_action):
             if action is not None:
                 action.setText(tr(ui_language(), "ui.menu"))

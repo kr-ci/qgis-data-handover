@@ -1,0 +1,12 @@
+Sonda sondy/r11_okno.py przed zmianami R11 (QGIS 4.2.3, Xvfb 1366x768, QT_SCALE_FACTOR=1.25)
+ekran (logiczne px): 1093×614, skala 1.25
+tryb=en okno=980×700 minimum=980×700 zakładki=741×397 899×246 665×439 322×115
+tryb=de okno=980×700 minimum=980×700 zakładki=838×397 931×246 692×439 362×115
+tryb=fr okno=980×700 minimum=1018×700 zakładki=893×397 990×246 805×439 348×115
+tryb=es okno=980×700 minimum=1025×700 zakładki=775×397 997×246 797×439 349×115
+tryb=pt okno=980×700 minimum=1009×700 zakładki=790×397 981×246 793×439 354×115
+tryb=pl okno=980×700 minimum=980×700 zakładki=709×397 932×246 714×439 323×115
+tryb=ru okno=980×700 minimum=1008×700 zakładki=890×397 980×246 671×439 342×115
+tryb=ko okno=980×700 minimum=980×700 zakładki=544×397 818×246 429×439 192×115
+tryb=ja okno=980×700 minimum=980×700 zakładki=553×397 814×246 438×439 210×115
+tryb=zh okno=980×700 minimum=980×700 zakładki=522×397 814×246 330×439 195×115

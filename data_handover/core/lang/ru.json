@@ -85,6 +85,8 @@
  "ui.theme.terracotta": "Терракота",
  "ui.theme.plum": "Слива",
  "ui.preview.more": "… и ещё {count} в файле",
+ "ui.preview.zoom_in": "Увеличить",
+ "ui.preview.zoom_out": "Уменьшить",
  "ui.title": "Data Handover",
  "ui.tagline": "Экспорт таблицы атрибутов в отформатированную книгу Excel.",
  "ui.tab.data": "Данные",

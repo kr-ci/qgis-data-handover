@@ -85,6 +85,8 @@
  "ui.theme.terracotta": "Terre cuite",
  "ui.theme.plum": "Prune",
  "ui.preview.more": "… et {count} dans le fichier",
+ "ui.preview.zoom_in": "Zoom avant",
+ "ui.preview.zoom_out": "Zoom arrière",
  "ui.title": "Data Handover",
  "ui.tagline": "Exporte la table attributaire vers un classeur Excel mis en forme.",
  "ui.tab.data": "Données",

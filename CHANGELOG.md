@@ -17,6 +17,14 @@ All notable changes to the Data Handover plugin. Versions follow
   it back to the plugin language. Choosing a different file language never
   changes the window language. The Processing algorithm uses the plugin
   language when no file language has been saved yet.
+- The window fits any screen: a small laptop, 4K, display scaling. It no
+  longer opens taller or wider than the screen; when it is smaller than its
+  content, the tabs scroll instead of squeezing the fields. The field table
+  scrolls sideways, and the description column keeps a usable width.
+- Look tab: a divider between the settings and the preview, and **+** / **−**
+  buttons to zoom the preview (50–200 %).
+- The plugin remembers the window size, the divider position and the preview
+  zoom; **Restore defaults** resets them.
 - A shorter plugin description and changelog in the Plugin Manager.
 
 ## 1.0.1
