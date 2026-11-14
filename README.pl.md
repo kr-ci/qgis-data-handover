@@ -42,8 +42,9 @@ mniejsza próbka nie wykrywa już pola.
 Eksport działa w tle: z QGIS można dalej korzystać, a pasek komunikatów
 pokazuje postęp z przyciskiem **Anuluj**. Anulowanie zostawia plik
 docelowy bez zmian. Przy bardzo dużych warstwach słownikowych (pola Value
-Relation, Relation Reference) QGIS może chwilę stać przed startem eksportu,
-gdy wczytuje etykiety.
+Relation, Relation Reference) QGIS może chwilę stać przy otwieraniu okna
+i przed startem eksportu, gdy wczytuje etykiety; tej chwili nie da się
+przerwać.
 
 Przycisk **Przywróć domyślne** na dole okna zeruje wygląd, arkusze i język
 pliku — wraca on do języka okna (opisy kolumn zapisane w projekcie zostają). Okno i plik są dostępne
