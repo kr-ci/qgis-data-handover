@@ -31,7 +31,7 @@ import qgis.utils  # noqa: E402
 from pyplugin_installer.version_compare import isCompatible  # noqa: E402
 
 REQUIRED = ("name", "qgisMinimumVersion", "description", "about", "version", "author", "email",
-            "repository", "tracker", "homepage", "changelog")
+            "repository", "tracker", "homepage")
 
 
 def check(condition: bool, message: str) -> None:
@@ -71,6 +71,9 @@ def main() -> None:
     meta = {key: qgis.utils.pluginMetadata("data_handover", key) for key in REQUIRED}
     missing = [key for key, value in meta.items() if value in ("", "__error__")]
     check(not missing, f"metadane: wymagane pola obecne ({missing})")
+    # Bez dziennika zmian w menedżerze wtyczek (decyzja właściciela 2026-11-15) — historia jest w CHANGELOG.md.
+    check(qgis.utils.pluginMetadata("data_handover", "changelog") == "__error__",
+          "metadane: bez pola changelog")
     check(meta["version"] == version and qgis.utils.pluginMetadata("data_handover", "experimental") == "False",
           f"metadane: wersja {version}, nie eksperymentalna")
     qgis_version = Qgis.version().split("-")[0]

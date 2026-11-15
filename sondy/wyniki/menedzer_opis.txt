@@ -1,0 +1,19 @@
+Sonda sondy/menedzer_opis.py, 2026-11-15 — ikona w opisie wtyczki w menedżerze wtyczek.
+
+Zgłoszenie właściciela (QGIS 3.44.7, Ubuntu): ikona nie przesuwa się przy zmianie
+rozmiaru okna i często zostaje przysłonięta.
+
+HTML opisu odtworzony z QgsPluginManager::showPluginDetails (QGIS release-3_44 i master
+bez różnic w tej części): <img style="float:right;max-width:64px;max-height:64px;">
+w pierwszej komórce tabeli, przed tytułem. Położenie ikony ustala QGIS, nie wtyczka;
+wtyczka podaje tylko plik (icon.svg, 64×64).
+
+Panel 700 px → 1100 → 450 → 700 (zmiana szerokości otwartego panelu) i od razu 450/1100:
+- Qt 5.15.14 QTextBrowser (QGIS 3.x bez QtWebKit): ikona przy prawej krawędzi
+  w każdej szerokości, tekst ją opływa. Poziomy suwak dopiero przy 200 px (15 px).
+- QtWebKit 5.212 z Ubuntu 24.04 (QGIS 3.x z QtWebKit): to samo.
+- Qt 6.10.2 QTextBrowser w qgis/qgis:4.2.3: to samo.
+
+Wniosek: zgłoszenia nie udało się odtworzyć na samym HTML. Potrzebny zrzut od
+właściciela (kiedy: przeciąganie krawędzi okna, rozdzielacza listy, maksymalizacja;
+co zasłania ikonę).
