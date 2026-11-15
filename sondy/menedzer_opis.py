@@ -1,9 +1,10 @@
 """Sonda: opis wtyczki w menedżerze wtyczek QGIS — gdzie ląduje ikona przy zmianie szerokości panelu.
 
-QGIS bez QtWebKit (np. obrazy qgis/qgis, pakiety dla Ubuntu) pokazuje opis w QTextBrowser
-(QgsWebView). HTML jest odtworzony z QgsPluginManager::showPluginDetails (QGIS 3.44,
-src/app/pluginmanager/qgspluginmanager.cpp): ikona to <img style="float:right; max-width:64px;
-max-height:64px;"> w pierwszej komórce tabeli, przed tytułem i opisem.
+QGIS z QtWebKit (np. 3.44 z qgis.org dla Ubuntu 24.04) pokazuje opis w QWebView, bez
+QtWebKit (obrazy qgis/qgis, QGIS 4) — w QTextBrowser. HTML jest odtworzony
+z QgsPluginManager::showPluginDetails (QGIS 3.44, src/app/pluginmanager/qgspluginmanager.cpp):
+ikona to <img style="float:right; max-width:64px; max-height:64px;"> w pierwszej komórce
+tabeli, przed tytułem i opisem. Wynik i przyczyna: sondy/wyniki/menedzer_opis.txt.
 
 QGIS 3.x z QtWebKit (pakiety qgis.org dla Ubuntu) rysuje ten sam HTML silnikiem WebKit:
   docker run --rm -v "$PWD:/src" -w /src ubuntu:24.04 bash -c 'apt-get update -qq &&
@@ -38,16 +39,23 @@ OUT = ROOT / "build" / "sonda_menedzer"
 STYLE = (
     "<style> body { color:#000000; background-color:#ffffff; } body, table { padding:0px; margin:0px;"
     " font-family:Verdana, Sans-serif; font-size:10pt; } td { vertical-align:top; }"
-    " td.key { font-weight: bold; white-space:nowrap; padding-right:10px; text-align:right; } </style>"
+    " td.key { font-weight: bold; white-space:nowrap; padding-right:10px; text-align:right; }"
+    " div#votes { width:360px; margin-left:98px; padding-top:3px; } </style>"
 )
+# QGIS z QtWebKit dokleja pod opisem blok głosowania każdej wtyczce spoza rdzenia. Styl gwiazdek
+# (stała szerokość 92 px) dostaje tylko wtyczka z plugin_id z repozytorium — bez niego div#votes
+# (360 + 98 px) rozpycha cały opis.
+VOTES = "<div id='stars_bg'/><div id='stars'/><div id='votes'></div><div><a id='send_vote_trigger'/></div>"
 
 
-def details(meta: dict[str, str], icon: str, changelog: bool) -> str:
-    """Jak showPluginDetails dla zainstalowanej wtyczki (bez głosowania, bez komunikatów)."""
+def details(meta: dict[str, str], icon: str, changelog: bool, votes: bool = False) -> str:
+    """Jak showPluginDetails dla zainstalowanej wtyczki z ZIP (bez plugin_id, bez komunikatów)."""
     page = STYLE + "<body><table cellspacing='4' width='100%'><tr><td colspan='2'>"
     page += f"<img src=\"file://{icon}\" style=\"float:right;max-width:64px;max-height:64px;\">"
     page += f"<h1>{meta['name']}</h1><h3>{meta['description']}</h3>"
     page += meta["about"].replace("\n", "<br/>") + "<br/><br/>"
+    if votes:
+        page += VOTES
     page += "</td></tr><tr><td width='1%'> </td><td width='99%'> </td></tr>"
     page += f"<tr><td class='key'>Category </td><td>{meta['category']}</td></tr>"
     tags = ", ".join(f"<a href='rpc2://search.tag/{t.strip()}/'>{t.strip()}</a>" for t in meta["tags"].split(","))
@@ -101,7 +109,7 @@ def main() -> None:
     icon = str(ROOT / "data_handover" / "icon.svg")
     variant = sys.argv[1] if len(sys.argv) > 1 else "obecny"
 
-    page = details(meta, icon, changelog=True)
+    page = details(meta, icon, changelog=True, votes=variant.startswith("webkit"))
     view = make_view(variant, app, 700)
     show(view, page, app)
     view.grab().save(str(OUT / f"{variant}_1_otwarte_700.png"))

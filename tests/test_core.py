@@ -248,6 +248,19 @@ def test_translation_complete_and_safe(lang: str) -> None:
     assert "&P" in text["footer.page"] and "&N" in text["footer.page"]
 
 
+def test_plugin_description_lists_languages() -> None:
+    """Opis w menedżerze wtyczek wymienia wszystkie języki (decyzja właściciela 2026-11-15)."""
+    import configparser
+
+    names = {"en": "English", "de": "German", "fr": "French", "es": "Spanish", "pt": "Portuguese",
+             "pl": "Polish", "ru": "Russian", "ko": "Korean", "ja": "Japanese", "zh": "Simplified Chinese"}
+    meta = configparser.ConfigParser(interpolation=None)
+    meta.read(Path(__file__).resolve().parents[1] / "data_handover" / "metadata.txt", encoding="utf-8")
+    about = meta["general"]["about"]
+    assert set(names) == set(LANGUAGES) and f"{len(LANGUAGES)} languages" in about
+    assert [lang for lang in LANGUAGES if names[lang] not in about] == []
+
+
 @pytest.mark.parametrize("lang", LANGUAGES)
 def test_export_in_every_language(tmp_path: Path, lang: str) -> None:
     path = str(tmp_path / "a.xlsx")

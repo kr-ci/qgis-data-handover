@@ -1,19 +1,39 @@
-Sonda sondy/menedzer_opis.py, 2026-11-15 — ikona w opisie wtyczki w menedżerze wtyczek.
+Sondy menedżera wtyczek, 2026-11-15 — ikona w opisie wtyczki znika przy węższym oknie.
 
-Zgłoszenie właściciela (QGIS 3.44.7, Ubuntu): ikona nie przesuwa się przy zmianie
-rozmiaru okna i często zostaje przysłonięta.
+Zgłoszenie właściciela (QGIS 3.44.7, Ubuntu, zrzuty z 2026-11-15): po zwężeniu okna Wtyczki
+tekst opisu przestaje się zawijać, pojawia się poziomy suwak, a ikona po prawej wypada
+z widoku. Inne wtyczki tego nie mają.
 
-HTML opisu odtworzony z QgsPluginManager::showPluginDetails (QGIS release-3_44 i master
-bez różnic w tej części): <img style="float:right;max-width:64px;max-height:64px;">
-w pierwszej komórce tabeli, przed tytułem. Położenie ikony ustala QGIS, nie wtyczka;
-wtyczka podaje tylko plik (icon.svg, 64×64).
+1. Prawdziwy QGIS 3.44.7 z qgis.org dla Ubuntu 24.04 (noble, budowany z QtWebKit;
+   bez QtWebKit tylko trixie, sid, plucky, questing, resolute — debian/rules):
+     docker build -t dh-qgis-ubuntu:3.44.7  (ubuntu:24.04 + qgis=1:3.44.7+40noble, python3-qgis)
+     profil z wtyczką w ~/.local/share/QGIS/QGIS3/profiles/default/python/plugins,
+     DH_PLUGINS="Data Handover;MetaSearch Catalog Client;Processing" \
+       xvfb-run -s "-screen 0 1600x1000x24" qgis --nologo --code sondy/menedzer_qgis.py
+   Panel opisu to QWebView. Opis Data Handover potrzebuje ok. 597 px:
+     okno 1150 → panel 678 px, poza panelem 0 px
+     okno 1040 → panel 568 px, poza panelem 29 px
+     okno  940 → panel 468 px, poza panelem 129 px
+   Tak samo dla starego opisu (z changelog), nowego i z ikoną PNG. MetaSearch
+   i Processing (wtyczki rdzenia): 0 px w każdej szerokości.
 
-Panel 700 px → 1100 → 450 → 700 (zmiana szerokości otwartego panelu) i od razu 450/1100:
-- Qt 5.15.14 QTextBrowser (QGIS 3.x bez QtWebKit): ikona przy prawej krawędzi
-  w każdej szerokości, tekst ją opływa. Poziomy suwak dopiero przy 200 px (15 px).
-- QtWebKit 5.212 z Ubuntu 24.04 (QGIS 3.x z QtWebKit): to samo.
-- Qt 6.10.2 QTextBrowser w qgis/qgis:4.2.3: to samo.
+2. Przyczyna (QgsPluginManager::showPluginDetails, gałąź release-3_44): przy QtWebKit
+   każda wtyczka spoza rdzenia dostaje pod opisem blok głosowania
+   <div id='stars_bg'/><div id='stars'/><div id='votes'>…, a styl
+   div#votes { width:360px; margin-left:98px } jest zawsze. Styl gwiazdek (stars_bg
+   o stałej szerokości 92 px, w którym blok się mieści) QGIS dodaje tylko, gdy wtyczka
+   ma plugin_id z repozytorium. Wtyczka zainstalowana z ZIP, której nie ma w żadnym
+   repozytorium, nie ma plugin_id — 458-pikselowy blok rozpycha cały opis.
+   Prawdziwy HTML z panelu (build/sonda_menedzer/qgis_Data_Handover.html) w samym
+   WebKit, panel 468 px: jak w QGIS 129 px poza panelem; bez bloku głosowania 0 px;
+   ze stylem gwiazdek (jak przy plugin_id) 0 px.
 
-Wniosek: zgłoszenia nie udało się odtworzyć na samym HTML. Potrzebny zrzut od
-właściciela (kiedy: przeciąganie krawędzi okna, rozdzielacza listy, maksymalizacja;
-co zasłania ikonę).
+3. Po stronie wtyczki nie da się tego zmienić: HTML i styl są w kodzie QGIS, a metadane
+   nie wpływają na blok głosowania. Po publikacji w plugins.qgis.org QGIS dostanie
+   plugin_id z repozytorium i problem zniknie. QGIS 4 (Qt6, bez QtWebKit) nie ma bloku
+   głosowania (QTextBrowser, sonda sondy/menedzer_opis.py: ikona zawsze przy krawędzi).
+
+Sonda bez QGIS, odtwarzająca HTML (z blokiem głosowania przy WebKit):
+  docker run --rm -v "$PWD:/src" -w /src ubuntu:24.04 bash -c 'apt-get update -qq &&
+    apt-get install -y -qq python3-pyqt5 python3-pyqt5.qtwebkit xvfb xauth fonts-dejavu &&
+    xvfb-run -a -s "-screen 0 1600x1200x24" python3 -u sondy/menedzer_opis.py webkit'

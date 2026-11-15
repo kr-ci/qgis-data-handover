@@ -28,8 +28,9 @@ All notable changes to the Data Handover plugin. Versions follow
   scrolls sideways instead of squeezing the table.
 - The plugin remembers the window size and the divider position; **Restore
   defaults** resets them.
-- A shorter plugin description in the Plugin Manager, which no longer shows
-  a changelog; the full history stays in this file.
+- A shorter plugin description in the Plugin Manager that lists the ten
+  languages; the Plugin Manager no longer shows a changelog (the full
+  history stays in this file).
 
 ## 1.0.1
 
