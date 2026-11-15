@@ -19,7 +19,7 @@ i dymki z opisem kolumn.*
 | Zakładka | Co zawiera |
 |---|---|
 | **Dane** | warstwa, zakres (wszystkie / zaznaczone / w zasięgu mapy), kolumny i ich kolejność, nagłówek, jednostka i opis kolumny (zapamiętywane w projekcie), decyzja o danych osobowych, kolumny z geometrii (powierzchnia albo długość, współrzędne, link do mapy) |
-| **Wygląd** | tabela Excela albo zwykły zakres (z filtrami lub bez); osobno dla nagłówków i zawartości: czcionka, rozmiar, kolor, pogrubienie, kursywa, podkreślenie, tło, wyrównanie, zawijanie; pasy co drugi wiersz; obramowanie (linia, kolor, wszystkie linie / tylko poziome / tylko obrys); tytuł nad danymi, zamrożony nagłówek, siatka, opis w dymku nagłówka, szerokość kolumn, orientacja wydruku, kolor karty; gotowe kolorystyki i podgląd na żywo, powiększany przyciskami + i − |
+| **Wygląd** | tabela Excela albo zwykły zakres (z filtrami lub bez); osobno dla nagłówków i zawartości: czcionka, rozmiar, kolor, pogrubienie, kursywa, podkreślenie, tło, wyrównanie, zawijanie; pasy co drugi wiersz; obramowanie (linia, kolor, wszystkie linie / tylko poziome / tylko obrys); tytuł nad danymi, zamrożony nagłówek, siatka, opis w dymku nagłówka, szerokość kolumn, orientacja wydruku, kolor karty; gotowe kolorystyki i podgląd na żywo |
 | **Arkusze** | tytuł, język pliku (10 języków, domyślnie język wtyczki), arkusze dodatkowe — domyślnie wyłączone — z wyborem zawartości |
 | **Zmiany** | porównanie z poprzednim eksportem według kolumny-klucza |
 
@@ -51,12 +51,11 @@ rozdzielczości ze skalowaniem (sprawdzone do 683 × 384 pikseli logicznych,
 np. 1366 × 768 przy 200%): gdy jest mniejsze niż jego zawartość,
 zakładki przewijają się, zamiast ściskać pola, tabela pól przewija się
 w poziomie, a rozdzielacz w zakładce Wygląd ustala, ile miejsca dostaje
-podgląd. Wtyczka zapamiętuje rozmiar okna, położenie rozdzielacza
-i powiększenie podglądu.
+podgląd. Wtyczka zapamiętuje rozmiar okna i położenie rozdzielacza.
 
 Przycisk **Przywróć domyślne** na dole okna zeruje wygląd, arkusze, język
-pliku (wraca on do języka okna) oraz rozmiar okna, rozdzielacz i powiększenie
-podglądu (opisy kolumn zapisane w projekcie zostają). Okno i plik są dostępne
+pliku (wraca on do języka okna) oraz rozmiar okna i rozdzielacz (opisy
+kolumn zapisane w projekcie zostają). Okno i plik są dostępne
 po angielsku, niemiecku, francusku, hiszpańsku, portugalsku, polsku,
 rosyjsku, koreańsku, japońsku i chińsku. Język okna wybierasz na liście
 „Język wtyczki” w stopce (domyślnie angielski). Język treści pliku idzie

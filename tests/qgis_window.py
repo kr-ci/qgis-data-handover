@@ -2,9 +2,9 @@
 
 `scripts/qgis-test.sh` uruchamia ten test kilka razy, na ekranach Xvfb o różnej
 wielkości i ze skalowaniem (QT_SCALE_FACTOR). Sprawdza, że okno mieści się na
-ekranie, przewija się zamiast ściskać, zapamiętuje rozmiar, rozdzielacz
-i powiększenie podglądu, a „Przywróć domyślne” je zeruje. Zrzuty całego
-ekranu trafiają do build/screens/.
+ekranie, przewija się zamiast ściskać, zapamiętuje rozmiar i rozdzielacz,
+a „Przywróć domyślne” je zeruje. Podgląd pokazuje czcionki w rozmiarze
+z ustawień. Zrzuty całego ekranu trafiają do build/screens/.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ SMALL = QSize(1000, 520)
 
 
 def fresh() -> None:
-    for name in ("window", "look_splitter", "preview_zoom"):
+    for name in ("window", "look_splitter"):
         QgsSettings().remove(SETTINGS + name)
 
 
@@ -53,14 +53,24 @@ def main() -> None:
     fresh()
 
     # Uszkodzone albo obce ustawienia nie blokują okna (przegląd R11, zarzut 1).
-    for zoom, saved in (("²", "abc"), ("9" * 5000, QByteArray(b"junk"))):
-        for name, value in (("preview_zoom", zoom), ("window", saved), ("look_splitter", saved)):
-            QgsSettings().setValue(SETTINGS + name, value)
+    for saved in ("abc", QByteArray(b"junk")):
+        for name in ("window", "look_splitter"):
+            QgsSettings().setValue(SETTINGS + name, saved)
         box = opened(layer)
-        check(box.zoom == 100 and area.contains(box.frameGeometry()),
-              f"uszkodzone ustawienia ({zoom[:4]!r}…): okno otwiera się z domyślnym układem")
+        check(area.contains(box.frameGeometry()), f"uszkodzone ustawienia ({saved!r}): okno otwiera się na ekranie")
         box.close()
     fresh()
+
+    # Podgląd pokazuje czcionki w rozmiarze z ustawień — bez powiększenia (decyzja właściciela
+    # 2026-11-15), także gdy w profilu został wpis powiększenia z wersji roboczej.
+    QgsSettings().setValue(SETTINGS + "preview_zoom", 200)
+    box = opened(layer)
+    look, found = box.look(), sizes(box.preview.text())
+    check(look.body.size in found
+          and all(s in (look.header.size, look.body.size, min(look.title_size, 20)) for s in found),
+          f"podgląd: pismo w rozmiarze z ustawień ({sorted(set(found))} pt)")
+    box.close()
+    QgsSettings().remove(SETTINGS + "preview_zoom")
 
     # Każdy język: okno na ekranie, także gdy ekran jest węższy niż stopka w jednym wierszu.
     for lang in LANGUAGES:
@@ -98,43 +108,29 @@ def main() -> None:
     QApplication.processEvents()
     check(table.horizontalScrollBar().maximum() > 0 and table.columnWidth(COL_DESC) >= 300,
           "najmniejsze okno: tabela pól ma poziomy suwak, opis nie jest ściśnięty")
-
-    # Podgląd: + i − zmieniają wielkość pisma, w granicach; powiększony przewija się w poziomie.
     box.tabs.setCurrentIndex(1)
     QApplication.processEvents()
-    base = sizes(box.preview.text())
-    while box.zoom_in_button.isEnabled():
-        box.zoom_in_button.click()
-    QApplication.processEvents()
-    big = sizes(box.preview.text())
-    check(box.zoom == 200 and len(big) == len(base) > 0
-          and all(abs(b - 2 * a) < 0.06 for a, b in zip(base, big)),
-          f"powiększenie 200 %: pismo w podglądzie dwa razy większe ({base[:2]} → {big[:2]})")
-    check(box.preview_scroll.horizontalScrollBar().maximum() > 0, "powiększony podgląd ma poziomy suwak")
-    while box.zoom_out_button.isEnabled():
-        box.zoom_out_button.click()
-    check(box.zoom == 50 and box.zoom_in_button.isEnabled(), "pomniejszenie kończy się na 50 %")
+    check(box.preview_scroll.horizontalScrollBar().maximum() > 0,
+          "najmniejsze okno: podgląd przewija się w poziomie, zamiast ściskać tabelę")
     box.close()
 
-    # Zapamiętane: rozmiar okna, rozdzielacz i powiększenie (także po zmianie języka okna).
+    # Zapamiętane: rozmiar okna i rozdzielacz (także po zmianie języka okna).
     box = opened(layer)
     box.resize(area.width() * 4 // 5, (area.height() - 40) * 4 // 5)
     box.tabs.setCurrentIndex(1)
     QApplication.processEvents()
     wanted = box.size()
     box.look_splitter.setSizes([260, 600])
-    box.zoom_in_button.click()
-    box.zoom_in_button.click()
-    zoom, split = box.zoom, box.look_splitter.sizes()
+    split = box.look_splitter.sizes()
     box.close()
     again = opened(layer)
     again.tabs.setCurrentIndex(1)
     QApplication.processEvents()
-    check(again.size() == wanted and again.look_splitter.sizes() == split and again.zoom == zoom != 100,
-          f"okno pamięta rozmiar, rozdzielacz {split} i powiększenie {zoom} %")
+    check(again.size() == wanted and again.look_splitter.sizes() == split,
+          f"okno pamięta rozmiar i rozdzielacz {split}")
     again.ui_lang_combo.setCurrentIndex(again.ui_lang_combo.findData("de"))
     german = opened(layer)
-    check(german.size() == wanted.expandedTo(german.minimumSizeHint()) and german.zoom == zoom,
+    check(german.size() == wanted.expandedTo(german.minimumSizeHint()),
           "po zmianie języka okno ma ten sam rozmiar (chyba że minimum w nowym języku jest większe)")
     german.close()
     QgsSettings().remove(UI_LANGUAGE)
@@ -148,19 +144,17 @@ def main() -> None:
     check(area.contains(back.frameGeometry()),
           f"zapisany rozmiar większy niż ekran i poza nim: okno {back.frameGeometry().getRect()} na ekranie")
 
-    # „Przywróć domyślne”: rozmiar, rozdzielacz i powiększenie jak przy pierwszym otwarciu.
+    # „Przywróć domyślne”: rozmiar i rozdzielacz jak przy pierwszym otwarciu.
     back.tabs.setCurrentIndex(1)
-    back.zoom_in_button.click()
     back.look_splitter.setSizes([200, 700])
     back.reset_settings()
     QApplication.processEvents()
     # Gdy okno jest węższe niż ustawienia i podgląd razem, Qt rozdziela brak miejsca zależnie
     # od kolejności zmian rozmiaru — po resecie rozdzielacz może stać kilka pikseli dalej.
     split_ok = all(abs(a - b) <= 10 for a, b in zip(back.look_splitter.sizes(), default_split))
-    check(back.size() == default_size and split_ok and back.zoom == 100
-          and area.contains(back.frameGeometry()),
+    check(back.size() == default_size and split_ok and area.contains(back.frameGeometry()),
           f"„Przywróć domyślne”: okno {back.width()}×{back.height()}, rozdzielacz {back.look_splitter.sizes()}"
-          f" (domyślny {default_split}), powiększenie {back.zoom} %")
+          f" (domyślny {default_split})")
     back.close()
     fresh()
     print("OK")

@@ -24,10 +24,10 @@ All notable changes to the Data Handover plugin. Versions follow
   squeezing the fields, and on a very narrow screen the bottom bar takes two
   rows. The field table scrolls sideways, and the description column keeps a
   usable width.
-- Look tab: a divider between the settings and the preview, and **+** / **−**
-  buttons to zoom the preview (50–200 %).
-- The plugin remembers the window size, the divider position and the preview
-  zoom; **Restore defaults** resets them.
+- Look tab: a divider between the settings and the preview; the preview
+  scrolls sideways instead of squeezing the table.
+- The plugin remembers the window size and the divider position; **Restore
+  defaults** resets them.
 - A shorter plugin description and changelog in the Plugin Manager.
 
 ## 1.0.1

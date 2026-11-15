@@ -91,7 +91,6 @@ CSS_BORDER = {"hair": "1px dotted", "thin": "1px solid", "medium": "2px solid", 
 DEFAULT_SIZE = QSize(1000, 720)
 # ponytail: przybliżona wysokość paska tytułu — Qt zna ramkę okna dopiero po jego pokazaniu.
 FRAME = 40
-ZOOMS = (50, 67, 75, 90, 100, 110, 125, 150, 175, 200)  # powiększenie podglądu w %, jak w przeglądarkach
 
 
 def safe_filename(text: str) -> str:
@@ -247,7 +246,6 @@ class HandoverDialog(QDialog):
         self._summable: set[str] = set()  # pola, które w tej chwili wolno sumować
         self._group_by = ""  # zapamiętana kolumna grupowania; do pliku idzie tylko to, co pokazuje lista
         self._refreshing = False
-        self.zoom = 100
 
         self.setWindowTitle(self.t("ui.title"))
         self.setWindowIcon(QIcon(ICON))
@@ -687,28 +685,14 @@ class HandoverDialog(QDialog):
         panel = QWidget()
         preview_box = QVBoxLayout(panel)
         preview_box.setContentsMargins(6, 0, 0, 0)
-        zoom_row = QHBoxLayout()
         caption = QLabel(self.t("ui.file.preview"))
         caption.setObjectName("hint")
-        zoom_row.addWidget(caption)
-        zoom_row.addStretch()
-        self.zoom_out_button = QToolButton()
-        self.zoom_out_button.setText("−")
-        self.zoom_out_button.setToolTip(self.t("ui.preview.zoom_out"))
-        self.zoom_out_button.clicked.connect(lambda: self._zoom(-1))
-        self.zoom_label = QLabel()
-        self.zoom_in_button = QToolButton()
-        self.zoom_in_button.setText("+")
-        self.zoom_in_button.setToolTip(self.t("ui.preview.zoom_in"))
-        self.zoom_in_button.clicked.connect(lambda: self._zoom(1))
-        for widget in (self.zoom_out_button, self.zoom_label, self.zoom_in_button):
-            zoom_row.addWidget(widget)
         self.preview = QLabel()
         self.preview.setTextFormat(Qt.TextFormat.RichText)
         self.preview.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.preview.setObjectName("preview")
         self.preview_scroll = scrolled(self.preview)
-        preview_box.addLayout(zoom_row)
+        preview_box.addWidget(caption)
         preview_box.addWidget(self.preview_scroll, 1)
         self.look_splitter.addWidget(panel)
         self.look_splitter.setStretchFactor(0, 0)
@@ -896,19 +880,18 @@ class HandoverDialog(QDialog):
         )
 
     def reset_settings(self) -> None:
-        """Przywraca domyślny wygląd, arkusze, język pliku (= język okna), rozmiar okna, rozdzielacz
-        i powiększenie podglądu (opisy kolumn w projekcie zostają)."""
+        """Przywraca domyślny wygląd, arkusze, język pliku (= język okna), rozmiar okna i rozdzielacz
+        (opisy kolumn w projekcie zostają)."""
         self._set_look(Look())
         self._set_sheets(Sheets())
         self.lang_combo.setCurrentIndex(max(0, self.lang_combo.findData(self.lang)))
         self._fit(DEFAULT_SIZE, self.isVisible())
         self.look_splitter.setSizes(self.look_split)
-        self._set_zoom(100)
 
     # -------------------------------------------------------------- window
 
     def _restore_window(self) -> None:
-        """Rozmiar okna, rozdzielacz i powiększenie z ostatniego razu, a bez nich — domyślne."""
+        """Rozmiar okna i rozdzielacz z ostatniego razu, a bez nich — domyślne."""
         self.ensurePolished()  # styl okna poszerza przycisk eksportu
         self.footer_width = self.footer.minimumSize().width()  # stopka w jednym wierszu
         saved = self.settings.value(SETTINGS + "window")
@@ -917,9 +900,6 @@ class HandoverDialog(QDialog):
         split = self.settings.value(SETTINGS + "look_splitter")
         if not (isinstance(split, QByteArray) and self.look_splitter.restoreState(split)):
             self.look_splitter.setSizes(self.look_split)
-        # Tylko wartości z listy, porównane jako tekst: uszkodzony wpis w profilu nie może zablokować okna.
-        zoom = str(self.settings.value(SETTINGS + "preview_zoom", 100))
-        self._set_zoom(next((z for z in ZOOMS if str(z) == zoom), 100))
 
     def _fit(self, size: QSize, keep_position: bool) -> None:
         """Okno mieści się na ekranie, na którym się otwiera: mały laptop, 4K, skalowanie, odłączony monitor.
@@ -938,20 +918,9 @@ class HandoverDialog(QDialog):
             self.move(max(area.left(), min(self.x(), area.right() + 1 - self.width())),
                       max(area.top(), min(self.y(), area.bottom() + 1 - self.height() - FRAME)))
 
-    def _zoom(self, step: int) -> None:
-        self._set_zoom(ZOOMS[ZOOMS.index(self.zoom) + step])
-
-    def _set_zoom(self, zoom: int) -> None:
-        self.zoom = zoom if zoom in ZOOMS else 100
-        self.zoom_label.setText(f"{self.zoom}%")
-        self.zoom_out_button.setEnabled(self.zoom > ZOOMS[0])
-        self.zoom_in_button.setEnabled(self.zoom < ZOOMS[-1])
-        self._update_preview()
-
     def done(self, result: int) -> None:
         """Każde zamknięcie okna (eksport, Zamknij, Esc, zmiana języka) zapamiętuje jego układ."""
-        for name, value in (("window", self.saveGeometry()), ("look_splitter", self.look_splitter.saveState()),
-                            ("preview_zoom", self.zoom)):
+        for name, value in (("window", self.saveGeometry()), ("look_splitter", self.look_splitter.saveState())):
             self.settings.setValue(SETTINGS + name, value)
         super().done(result)
 
@@ -1145,14 +1114,10 @@ class HandoverDialog(QDialog):
         columns = list(xlsx._plain_years(Package("", columns, sample_rows), sample_rows).columns)
         side = CSS_BORDER.get(look.border_style, "")
         line = f"{side} #{look.border_color}" if side else ""
-        zoom = self.zoom / 100
-
-        def scaled(value: float) -> str:
-            return f"{value * zoom:.4g}"
 
         def cell_css(style: CellLook, align: str, r: int, c: int, rows: int, cols: int, fill: str) -> str:
-            css = [f"font-family:'{style.font}'", f"font-size:{scaled(style.size)}pt", f"color:#{style.color}",
-                   f"padding:{scaled(3)}px {scaled(7)}px", f"text-align:{align}"]
+            css = [f"font-family:'{style.font}'", f"font-size:{style.size}pt", f"color:#{style.color}",
+                   "padding:3px 7px", f"text-align:{align}"]
             if style.bold:
                 css.append("font-weight:bold")
             if style.italic:
@@ -1218,7 +1183,7 @@ class HandoverDialog(QDialog):
         title = ""
         if look.show_title:
             text = html.escape(self.title_edit.text() or (self.layer.name() if self.layer else ""))
-            title = (f"<div style=\"font-family:'{look.body.font}'; font-size:{scaled(min(look.title_size, 20))}pt;"
+            title = (f"<div style=\"font-family:'{look.body.font}'; font-size:{min(look.title_size, 20)}pt;"
                      f" font-weight:600; color:#{look.title_color};\">{text}</div>"
                      f"<div style='color:#595959; font-style:italic; margin-bottom:6px;'>"
                      f"{html.escape(count_label(lang, count or 0))}</div>")
@@ -1226,14 +1191,12 @@ class HandoverDialog(QDialog):
         flags = " · ".join(t for t, on in ((self.t("ui.look.as_table"), look.as_table),
                                            (self.t("ui.look.autofilter"), filters and not look.as_table),
                                            (self.t("ui.look.freeze"), look.freeze_header)) if on)
-        base = self.preview.font().pointSizeF()
         self.preview.setText(
-            f"<div style='font-size:{scaled(base if base > 0 else 9)}pt;'>"
             f"{title}<table cellspacing='0' cellpadding='0' style='border-collapse:collapse;'>"
             f"<tr>{head}</tr>{body}</table>"
             f"<div style='color:#595959; margin-top:6px;'>{more}</div>"
             f"<div style='color:#595959; margin-top:10px;'>{html.escape(flags)}</div>"
-            f"<div style='margin-top:10px;'>{tabs}</div></div>"
+            f"<div style='margin-top:10px;'>{tabs}</div>"
         )
 
     # -------------------------------------------------------------- export

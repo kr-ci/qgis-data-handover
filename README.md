@@ -19,7 +19,7 @@ notes.*
 | Tab | What it holds |
 |---|---|
 | **Data** | layer, scope (all / selected / in map extent), columns and their order, header, unit and description of each column (saved in the project), the decision about personal data, columns from geometry (area or length, coordinates, map link) |
-| **Look** | Excel table or plain range (with or without filters); separately for headers and content: font, size, colour, bold, italic, underline, fill, alignment, wrapping; banded rows; borders (line, colour, all lines / horizontal only / outline only); title above the data, frozen header, gridlines, description in a header comment, column width, print orientation, tab colour; colour presets and a live preview you can zoom with + and − |
+| **Look** | Excel table or plain range (with or without filters); separately for headers and content: font, size, colour, bold, italic, underline, fill, alignment, wrapping; banded rows; borders (line, colour, all lines / horizontal only / outline only); title above the data, frozen header, gridlines, description in a header comment, column width, print orientation, tab colour; colour presets and a live preview |
 | **Sheets** | title, file language (10 languages, the plugin language by default), extra sheets — off by default — with a choice of what goes in |
 | **Changes** | comparison with the previous export by a key column |
 
@@ -50,11 +50,11 @@ display scaling (checked down to 683 × 384 logical pixels, e.g. 1366 × 768
 at 200 %): when it is smaller than its content, the tabs scroll
 instead of squeezing the fields, the field table scrolls sideways, and a
 divider on the Look tab sets how much room the preview gets. The plugin
-remembers the window size, the divider position and the preview zoom.
+remembers the window size and the divider position.
 
 The **Restore defaults** button at the bottom of the window resets the
 look, the sheets, the file language to the window language, and the window
-size, divider and preview zoom (column descriptions saved in the project stay). The window and the file are available in English, German,
+size and divider (column descriptions saved in the project stay). The window and the file are available in English, German,
 French, Spanish, Portuguese, Polish, Russian, Korean, Japanese and
 Simplified Chinese. Pick the window language from the "Plugin language"
 list in the footer (English by default). The file language follows it:
